@@ -330,9 +330,70 @@ def handle_command(command: str) -> bool:
         if not args:
             console.print("[red]Error: Please provide a file path[/red]")
             console.print("Example: ingest document.pdf")
+            console.print("         ingest report.docx")
         else:
-            console.print(f"\n[cyan]📄 Ingesting: {args}[/cyan]")
-            console.print("[yellow]⚠️  Ingestion not yet implemented - Coming in next step![/yellow]\n")
+            file_path = args. strip()
+            
+            # Check if file exists
+            from pathlib import Path
+            path = Path(file_path)
+            
+            if not path.exists():
+                console.print(f"[red]Error: File not found: {file_path}[/red]\n")
+                return True
+            
+            # Determine file type
+            file_ext = path.suffix.lower()
+            
+            if file_ext == ".pdf":
+                console.print(f"\n[cyan]📄 Ingesting PDF: {path.name}[/cyan]\n")
+                
+                try:
+                    from nexora001.processors.pdf_processor import process_pdf
+                    
+                    with console.status("[bold cyan]Processing PDF...", spinner="dots"):
+                        result = process_pdf(str(path))
+                    
+                    if result['success']:
+                        console.print(f"[green]✅ PDF ingested successfully![/green]")
+                        console.print(f"  Title: {result['title']}")
+                        console.print(f"  Pages: {result['pages']}")
+                        console.print(f"  Chunks created: {result['chunks_created']}")
+                        console.print(f"  Characters: {result['total_characters']:,}\n")
+                    else:
+                        console.print(f"[red]❌ Failed: {result. get('error', 'Unknown error')}[/red]\n")
+                        
+                except Exception as e:
+                    console.print(f"[red]❌ Error processing PDF: {e}[/red]\n")
+                    if settings.debug:
+                        console.print_exception()
+            
+            elif file_ext == ".docx":
+                console.print(f"\n[cyan]📝 Ingesting DOCX: {path.name}[/cyan]\n")
+                
+                try:
+                    from nexora001.processors.docx_processor import process_docx
+                    
+                    with console.status("[bold cyan]Processing DOCX...", spinner="dots"):
+                        result = process_docx(str(path))
+                    
+                    if result['success']:
+                        console.print(f"[green]✅ DOCX ingested successfully![/green]")
+                        console.print(f"  Title: {result['title']}")
+                        console.print(f"  Paragraphs: {result['paragraphs']}")
+                        console.print(f"  Chunks created: {result['chunks_created']}")
+                        console.print(f"  Characters: {result['total_characters']:,}\n")
+                    else:
+                        console.print(f"[red]❌ Failed: {result.get('error', 'Unknown error')}[/red]\n")
+                        
+                except Exception as e:
+                    console.print(f"[red]❌ Error processing DOCX: {e}[/red]\n")
+                    if settings.debug:
+                        console.print_exception()
+            
+            else:
+                console.print(f"[red]Error: Unsupported file type: {file_ext}[/red]")
+                console.print("Supported formats: . pdf, .docx\n")
     
     elif cmd == "ask":
         if not args:

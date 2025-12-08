@@ -1,5 +1,5 @@
 """
-Scrapy spider for crawling websites with chunking and embedding generation.
+Scrapy spider for crawling websites with Playwright support for JavaScript. 
 """
 
 import scrapy
@@ -10,19 +10,20 @@ import sys
 from pathlib import Path
 
 # Add parent to path for imports
-sys.path. insert(0, str(Path(__file__).parent. parent. parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from nexora001. storage.mongodb import MongoDBStorage
+from nexora001.storage.mongodb import MongoDBStorage
 from nexora001.processors.chunker import TextChunker
 from nexora001.processors.embeddings import EmbeddingGenerator, EmbeddingProvider
 
 
-class Nexora001Spider(scrapy. Spider):
+class Nexora001Spider(scrapy.Spider):
     """
-    Spider for crawling websites and extracting text content with embeddings.
+    Spider for crawling websites with JavaScript support via Playwright.
     
     Usage:
         scrapy crawl nexora001 -a start_url=https://example.com -a max_depth=2
+        scrapy crawl nexora001 -a start_url=https://example.com -a use_playwright=true
     """
     
     name = "nexora001"
@@ -43,6 +44,7 @@ class Nexora001Spider(scrapy. Spider):
         follow_links: bool = True,
         enable_embeddings: bool = True,
         chunk_size: int = 500,
+        use_playwright: bool = False,  # NEW
         *args,
         **kwargs
     ):
@@ -55,6 +57,7 @@ class Nexora001Spider(scrapy. Spider):
             follow_links: Whether to follow internal links (default: True)
             enable_embeddings: Whether to generate embeddings (default: True)
             chunk_size: Size of text chunks (default: 500)
+            use_playwright: Whether to use Playwright for JavaScript rendering
         """
         super().__init__(*args, **kwargs)
         
@@ -66,11 +69,12 @@ class Nexora001Spider(scrapy. Spider):
         self.follow_links = follow_links in [True, 'True', 'true', '1']
         self.enable_embeddings = enable_embeddings in [True, 'True', 'true', '1']
         self.chunk_size = int(chunk_size)
+        self.use_playwright = use_playwright in [True, 'True', 'true', '1']
         self.allowed_domains = [urlparse(start_url).netloc]
         
         # Statistics
         self.pages_crawled = 0
-        self. documents_created = 0
+        self.documents_created = 0
         self.chunks_created = 0
         
         # Initialize components
@@ -88,17 +92,51 @@ class Nexora001Spider(scrapy. Spider):
                 self.logger.info(f"✓ Embeddings enabled (dimension: {self.embedding_generator.get_dimension()})")
             except Exception as e:
                 self.logger.warning(f"Failed to initialize embeddings: {e}")
-                self. logger.warning("Continuing without embeddings...")
+                self.logger.warning("Continuing without embeddings...")
                 self.enable_embeddings = False
         
         self.logger.info(f"Spider initialized:")
         self.logger.info(f"  Start URL: {start_url}")
         self.logger.info(f"  Max depth: {self.max_depth}")
         self.logger.info(f"  Follow links: {self.follow_links}")
-        self.logger. info(f"  Embeddings: {self.enable_embeddings}")
+        self.logger.info(f"  Embeddings: {self.enable_embeddings}")
         self.logger.info(f"  Chunk size: {self.chunk_size}")
+        self.logger.info(f"  Playwright: {self.use_playwright}")
     
-    def parse(self, response: Response, depth: int = 0) -> Generator:
+    def start_requests(self):
+        """Generate initial requests with Playwright if enabled."""
+        for url in self.start_urls:
+            if self.use_playwright:
+                # Use Playwright for JavaScript rendering
+                yield scrapy.Request(
+                    url,
+                    callback=self.parse,
+                    cb_kwargs={'depth': 0},
+                    meta={
+                        "playwright": True,
+                        "playwright_include_page": True,
+                        "playwright_page_methods": [
+                            # Wait for page to be fully loaded
+                            ("wait_for_load_state", "networkidle"),
+                        ],
+                    },
+                    errback=self.errback_close_page,
+                )
+            else:
+                # Regular request
+                yield scrapy.Request(
+                    url,
+                    callback=self.parse,
+                    cb_kwargs={'depth': 0}
+                )
+    
+    async def errback_close_page(self, failure):
+        """Handle Playwright errors."""
+        page = failure.request.meta.get("playwright_page")
+        if page:
+            await page.close()
+    
+    async def parse(self, response: Response, depth: int = 0) -> Generator:
         """
         Parse a web page and extract content. 
         
@@ -108,6 +146,11 @@ class Nexora001Spider(scrapy. Spider):
         """
         self.logger.info(f"Crawling [{depth}/{self.max_depth}]: {response.url}")
         
+        # Close Playwright page if used
+        page = response.meta.get("playwright_page")
+        if page:
+            await page.close()
+        
         # Check if already crawled
         if self.storage.url_exists(response.url):
             self.logger.info(f"  Skipping (already crawled): {response.url}")
@@ -116,7 +159,7 @@ class Nexora001Spider(scrapy. Spider):
         # Extract text content
         content = self._extract_text(response)
         
-        if not content or len(content. strip()) < 100:
+        if not content or len(content.strip()) < 100:
             self.logger.warning(f"  Little/no content found: {response.url}")
             return
         
@@ -127,7 +170,7 @@ class Nexora001Spider(scrapy. Spider):
         self.logger.info(f"  Content length: {len(content)} chars")
         
         # Chunk the content
-        chunks = self. chunker.chunk_text(
+        chunks = self.chunker.chunk_text(
             content,
             metadata={
                 "source_url": response.url,
@@ -149,7 +192,7 @@ class Nexora001Spider(scrapy. Spider):
                 embedding = None
                 if self.enable_embeddings and self.embedding_generator:
                     try:
-                        embedding = self. embedding_generator.generate_embedding(chunk_text)
+                        embedding = self.embedding_generator.generate_embedding(chunk_text)
                     except Exception as e:
                         self.logger.warning(f"  Failed to generate embedding for chunk {chunk_index}: {e}")
                 
@@ -165,7 +208,8 @@ class Nexora001Spider(scrapy. Spider):
                         total_chunks=total_chunks,
                         metadata={
                             "depth": depth,
-                            "chunk_char_count": chunk['char_count']
+                            "chunk_char_count": chunk['char_count'],
+                            "rendered_with_playwright": self.use_playwright
                         }
                     )
                 else:
@@ -178,7 +222,8 @@ class Nexora001Spider(scrapy. Spider):
                             "depth": depth,
                             "chunk_index": chunk_index,
                             "total_chunks": total_chunks,
-                            "chunk_char_count": chunk['char_count']
+                            "chunk_char_count": chunk['char_count'],
+                            "rendered_with_playwright": self.use_playwright
                         }
                     )
                 
@@ -186,17 +231,17 @@ class Nexora001Spider(scrapy. Spider):
                 self.chunks_created += 1
                 
             except Exception as e:
-                self.logger.error(f"  ✗ Failed to store chunk {chunk_index}: {e}")
+                self.logger.error(f"  \u2717 Failed to store chunk {chunk_index}: {e}")
                 continue
         
         self.pages_crawled += 1
         self.documents_created += stored_count
         
-        self. logger.info(f"  ✓ Stored {stored_count} chunks")
+        self.logger.info(f"  \u2713 Stored {stored_count} chunks")
         
         # Follow links if enabled and depth allows
         if self.follow_links and depth < self.max_depth:
-            links = response.css('a::attr(href)'). getall()
+            links = response.css('a::attr(href)').getall()
             internal_links = [
                 urljoin(response.url, link)
                 for link in links
@@ -206,12 +251,28 @@ class Nexora001Spider(scrapy. Spider):
             self.logger.info(f"  Found {len(internal_links)} internal links")
             
             for link in internal_links[:10]:  # Limit to 10 links per page
-                yield scrapy.Request(
-                    link,
-                    callback=self. parse,
-                    cb_kwargs={'depth': depth + 1},
-                    dont_filter=False
-                )
+                if self.use_playwright:
+                    yield scrapy.Request(
+                        link,
+                        callback=self.parse,
+                        cb_kwargs={'depth': depth + 1},
+                        dont_filter=False,
+                        meta={
+                            "playwright": True,
+                            "playwright_include_page": True,
+                            "playwright_page_methods": [
+                                ("wait_for_load_state", "networkidle"),
+                            ],
+                        },
+                        errback=self.errback_close_page,
+                    )
+                else:
+                    yield scrapy.Request(
+                        link,
+                        callback=self.parse,
+                        cb_kwargs={'depth': depth + 1},
+                        dont_filter=False
+                    )
     
     def _extract_text(self, response: Response) -> str:
         """
@@ -234,7 +295,7 @@ class Nexora001Spider(scrapy. Spider):
         main_selectors = [
             'main ::text',
             'article ::text',
-            '. content ::text',
+            '.content ::text',
             '#content ::text',
             'body ::text'
         ]
@@ -249,7 +310,7 @@ class Nexora001Spider(scrapy. Spider):
         cleaned_text = ' '.join(
             text.strip()
             for text in text_parts
-            if text. strip()
+            if text.strip()
         )
         
         return cleaned_text
@@ -264,7 +325,7 @@ class Nexora001Spider(scrapy. Spider):
             response.url
         )
         
-        return title. strip() if title else response.url
+        return title.strip() if title else response.url
     
     def _is_internal_link(self, link: str, base_url: str) -> bool:
         """
@@ -282,7 +343,7 @@ class Nexora001Spider(scrapy. Spider):
         
         # Make absolute
         absolute_link = urljoin(base_url, link)
-        link_domain = urlparse(absolute_link). netloc
+        link_domain = urlparse(absolute_link).netloc
         base_domain = urlparse(base_url).netloc
         
         return link_domain == base_domain

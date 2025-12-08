@@ -112,6 +112,7 @@ def handle_crawl(args: str) -> bool:
         console.print("[red]Error: Please provide a URL to crawl[/red]")
         console.print("Example: crawl https://example.com")
         console.print("         crawl https://python.org --depth 2")
+        console.print("         crawl https://example.com --playwright")
         return True
     
     # Parse arguments
@@ -121,6 +122,7 @@ def handle_crawl(args: str) -> bool:
     # Parse options
     max_depth = 2
     follow_links = True
+    use_playwright = False
     
     for i, part in enumerate(parts[1:]):
         if part in ['--depth', '-d'] and i + 1 < len(parts[1:]):
@@ -130,6 +132,8 @@ def handle_crawl(args: str) -> bool:
                 pass
         elif part in ['--no-follow', '-n']:
             follow_links = False
+        elif part in ['--playwright', '-p', '--js']:
+            use_playwright = True
     
     # Validate URL
     if not url.startswith(('http://', 'https://')):
@@ -141,16 +145,22 @@ def handle_crawl(args: str) -> bool:
     console.print(f"  URL: {url}")
     console.print(f"  Max depth: {max_depth}")
     console. print(f"  Follow links: {follow_links}")
+    console.print(f"  JavaScript rendering: {use_playwright}")
     
     if not Confirm.ask("\nStart crawling? ", default=True):
-        console.print("[yellow]Crawl cancelled[/yellow]")
+        console. print("[yellow]Crawl cancelled[/yellow]")
         return True
     
     # Start crawling
-    console.print(f"\n[cyan]🕷️  Starting crawler...[/cyan]\n")
+    console.print(f"\n[cyan]🕷️  Starting crawler.. .[/cyan]\n")
     
     try:
-        result = crawl_website(url, max_depth=max_depth, follow_links=follow_links)
+        result = crawl_website(
+            url,
+            max_depth=max_depth,
+            follow_links=follow_links,
+            use_playwright=use_playwright
+        )
         console.print(f"\n[green]✅ Crawl completed successfully![/green]")
         
     except KeyboardInterrupt:
@@ -161,7 +171,6 @@ def handle_crawl(args: str) -> bool:
             console.print_exception()
     
     return True
-
 
 def handle_list() -> bool:
     """Handle the list command."""

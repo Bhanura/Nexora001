@@ -20,7 +20,7 @@ ROBOTSTXT_OBEY = os.getenv('RESPECT_ROBOTS_TXT', 'true').lower() == 'true'
 CONCURRENT_REQUESTS = 2
 
 # Configure a delay for requests
-DOWNLOAD_DELAY = float(os.getenv('CRAWL_DELAY', '1. 0'))
+DOWNLOAD_DELAY = float(os.getenv('CRAWL_DELAY', '1.0'))
 
 # Disable cookies
 COOKIES_ENABLED = False
@@ -41,7 +41,22 @@ HTTPCACHE_EXPIRATION_SECS = 86400  # 24 hours
 HTTPCACHE_DIR = 'data/httpcache'
 HTTPCACHE_IGNORE_HTTP_CODES = [500, 502, 503, 504, 400, 403, 404, 408]
 
+# Playwright settings
+DOWNLOAD_HANDLERS = {
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
+
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
+
+PLAYWRIGHT_LAUNCH_OPTIONS = {
+    "headless": True,
+    "timeout": 60000,  # 60 seconds
+}
+
+# Twisted reactor
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+
 # Set settings whose default value is deprecated
 REQUEST_FINGERPRINTER_IMPLEMENTATION = '2.7'
-TWISTED_REACTOR = 'twisted.internet.asyncioreactor.AsyncioSelectorReactor'
 FEED_EXPORT_ENCODING = 'utf-8'

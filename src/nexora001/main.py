@@ -19,9 +19,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from nexora001. config import settings, print_config_status
 from nexora001.storage.mongodb import get_storage
 from nexora001. crawler.manager import crawl_website
+from nexora001.rag.pipeline import create_rag_pipeline
 
 console = Console()
 
+# Global RAG pipeline (initialized on first use)
+_rag_pipeline = None
 
 def print_banner():
     """Display the application banner."""
@@ -48,6 +51,8 @@ def print_help():
 | `crawl <url>` | Crawl a website and index its content |
 | `ingest <file>` | Ingest a PDF or document file |
 | `ask <question>` | Ask a question about indexed content |
+| `history` | Show conversation history |
+| `clear-history` | Clear conversation history |
 | `list` | List all indexed documents |
 | `stats` | Show database statistics |
 | `delete <url>` | Delete documents from a specific URL |
@@ -61,6 +66,26 @@ def print_help():
 
     """
     console.print(Markdown(help_text))
+
+def get_rag_pipeline():
+    """Get or create RAG pipeline."""
+    global _rag_pipeline
+    
+    if _rag_pipeline is None:
+        console.print("[dim]Initializing AI system.. .[/dim]")
+        try:
+            _rag_pipeline = create_rag_pipeline(
+                embedding_provider="sentence_transformers",
+                model_name="gemini-2.5-flash",
+                top_k=5,
+                min_similarity=0.3
+            )
+            console.print("[dim]✓ AI ready[/dim]\n")
+        except Exception as e:
+            console.print(f"[red]Failed to initialize AI: {e}[/red]\n")
+            return None
+    
+    return _rag_pipeline
 
 
 def handle_crawl(args: str) -> bool:
@@ -296,9 +321,82 @@ def handle_command(command: str) -> bool:
             console.print("[red]Error: Please provide a question[/red]")
             console.print("Example: ask What is machine learning?")
         else:
-            console.print(f"\n[cyan]🤔 Question: {args}[/cyan]")
-            console.print("[yellow]⚠️  RAG query not yet implemented - Coming in next step![/yellow]\n")
+            console.print(f"\n[cyan]🤔 Question:[/cyan] {args}\n")
+            
+            # Get RAG pipeline
+            rag = get_rag_pipeline()
+            if not rag:
+                return True
+            
+            try:
+                # Ask question
+                with console.status("[bold cyan]Thinking.. .", spinner="dots"):
+                    result = rag.ask(args, use_history=True)
+                
+                answer = result['answer']
+                sources = result['sources']
+                found_docs = result['found_documents']
+                
+                # Display answer
+                from rich.markdown import Markdown
+                console.print(Panel(
+                    Markdown(answer),
+                    title=f"🤖 Answer (from {found_docs} sources)",
+                    border_style="green"
+                ))
+                
+                # Display sources
+                if sources:
+                    console.print("\n[bold]📚 Sources:[/bold]")
+                    for source in sources:
+                        console.print(
+                            f"  [{source['number']}] {source['title']} "
+                            f"(relevance: {source['score']:.0%})"
+                        )
+                        console.print(f"      [blue]{source['url']}[/blue]")
+                
+                console.print()
+                
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]\n")
+                if settings.debug:
+                    console.print_exception()
+
+    elif cmd == "history":
+        """Show conversation history."""
+        rag = get_rag_pipeline()
+        if not rag:
+            return True
+        
+        history = rag.get_history()
+        
+        if not history:
+            console.print("[yellow]No conversation history yet.[/yellow]\n")
+            return True
+        
+        console.print("\n[cyan]📜 Conversation History[/cyan]")
+        console.print("─" * 60)
+        
+        for i, msg in enumerate(history, 1):
+            role = msg['role']
+            content = msg['content'][:100] + "..." if len(msg['content']) > 100 else msg['content']
+            
+            if role == "user":
+                console.print(f"\n[bold cyan]You:[/bold cyan] {content}")
+            else:
+                console. print(f"[bold green]AI:[/bold green] {content}")
+        
+        console.print()
     
+    elif cmd == "clear-history":
+        """Clear conversation history."""
+        rag = get_rag_pipeline()
+        if not rag:
+            return True
+        
+        rag.clear_history()
+        console.print("[green]✓ Conversation history cleared[/green]\n")
+
     else:
         console.print(f"[red]Unknown command: {cmd}[/red]")
         console.print("Type 'help' for available commands.")

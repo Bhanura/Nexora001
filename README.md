@@ -49,7 +49,7 @@ Nexora001 is an intelligent chatbot that:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github. com/YOUR_USERNAME/Nexora001.git
+   git clone https://github. com/Bhanura/Nexora001.git
    cd Nexora001
    ```
 
@@ -113,7 +113,7 @@ nexora001> exit                    # Exit application
 ## 🗺️ Development Roadmap
 
 - [x] Phase 1: Project Setup
-- [ ] Phase 1: Console Application
+- [x] Phase 1: Console Application
 - [ ] Phase 2: Backend API
 - [ ] Phase 3: Chat Frontend
 - [ ] Phase 4: Admin Frontend

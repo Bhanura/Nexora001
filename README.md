@@ -141,4 +141,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📧 Contact
 
 - Author: Bhanura
-- Project Link: https://github. com/YOUR_USERNAME/Nexora001
+- Project Link: https://github.com/Bhanura/Nexora001

@@ -10,6 +10,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 import os
 from dotenv import load_dotenv
+from typing import List, Dict, Optional, Any, Tuple
 
 load_dotenv()
 
@@ -225,6 +226,123 @@ class MongoDBStorage:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self. close()
+
+    def store_document_with_embedding(
+        self,
+        content: str,
+        embedding: List[float],
+        source_url: str,
+        source_type: str = "web",
+        title: Optional[str] = None,
+        chunk_index: int = 0,
+        total_chunks: int = 1,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Store a document with its embedding vector.
+        
+        Args:
+            content: The text content
+            embedding: The embedding vector
+            source_url: URL or identifier of the source
+            source_type: Type of source ("web", "pdf", "docx")
+            title: Document title
+            chunk_index: Index of this chunk
+            total_chunks: Total number of chunks
+            metadata: Additional metadata
+            
+        Returns:
+            Document ID (string)
+        """
+        doc = {
+            "content": content,
+            "embedding": embedding,
+            "metadata": {
+                "source_url": source_url,
+                "source_type": source_type,
+                "title": title or source_url,
+                "crawled_at": datetime.utcnow(),
+                "chunk_index": chunk_index,
+                "total_chunks": total_chunks,
+                "embedding_dimension": len(embedding),
+                **(metadata or {})
+            }
+        }
+        
+        result = self.documents.insert_one(doc)
+        return str(result.inserted_id)
+    
+    def vector_search(
+        self,
+        query_embedding: List[float],
+        limit: int = 5,
+        min_score: float = 0.0
+    ) -> List[Dict]:
+        """
+        Perform vector similarity search.
+        
+        Note: This is a simple implementation using cosine similarity.
+        For production, use MongoDB Atlas Vector Search with indexes.
+        
+        Args:
+            query_embedding: Query vector
+            limit: Maximum number of results
+            min_score: Minimum similarity score (0-1)
+            
+        Returns:
+            List of documents with similarity scores
+        """
+        # Get all documents with embeddings
+        docs = list(self.documents.find(
+            {"embedding": {"$exists": True}},
+            limit=1000  # Limit for performance
+        ))
+        
+        if not docs:
+            return []
+        
+        # Calculate cosine similarity for each document
+        results = []
+        for doc in docs:
+            doc_embedding = doc. get("embedding", [])
+            if not doc_embedding:
+                continue
+            
+            # Cosine similarity
+            similarity = self._cosine_similarity(query_embedding, doc_embedding)
+            
+            if similarity >= min_score:
+                doc['similarity_score'] = similarity
+                results. append(doc)
+        
+        # Sort by similarity (descending)
+        results.sort(key=lambda x: x['similarity_score'], reverse=True)
+        
+        return results[:limit]
+    
+    @staticmethod
+    def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+        """
+        Calculate cosine similarity between two vectors.
+        
+        Args:
+            vec1: First vector
+            vec2: Second vector
+            
+        Returns:
+            Similarity score (0-1)
+        """
+        if len(vec1) != len(vec2):
+            return 0.0
+        
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        magnitude1 = sum(a * a for a in vec1) ** 0.5
+        magnitude2 = sum(b * b for b in vec2) ** 0.5
+        
+        if magnitude1 == 0 or magnitude2 == 0:
+            return 0.0
+        
+        return dot_product / (magnitude1 * magnitude2)    
 
 
 # Convenience function

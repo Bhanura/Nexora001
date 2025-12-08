@@ -1,16 +1,24 @@
 """
 Nexora001 - Main Console Application Entry Point
 
-This is the interactive console interface for the Nexora001 system. 
+This is the interactive console interface for the Nexora001 system.
 """
 
 import sys
+from pathlib import Path
 from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
+from rich. panel import Panel
+from rich.prompt import Prompt, Confirm
 from rich.markdown import Markdown
+from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from nexora001. config import settings, print_config_status
+from nexora001.storage.mongodb import get_storage
+from nexora001. crawler.manager import crawl_website
 
 console = Console()
 
@@ -23,11 +31,11 @@ def print_banner():
     ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║██████╔╝███████║██║██╔██║██║██╔██║╚██║
     ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║██╔══██╗██╔══██║████╔╝██║████╔╝██║ ██║
     ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝██║  ██║██║  ██║╚██████╔╝╚██████╔╝ ██║
-    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝
+    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝  ╚═╝
                                                                              
            AI-Powered Knowledge Base Chatbot with RAG
     """
-    console. print(Panel(banner, style="bold blue"))
+    console.print(Panel(banner, style="bold blue"))
 
 
 def print_help():
@@ -40,6 +48,9 @@ def print_help():
 | `crawl <url>` | Crawl a website and index its content |
 | `ingest <file>` | Ingest a PDF or document file |
 | `ask <question>` | Ask a question about indexed content |
+| `list` | List all indexed documents |
+| `stats` | Show database statistics |
+| `delete <url>` | Delete documents from a specific URL |
 | `status` | View system and database status |
 | `config` | View current configuration |
 | `clear` | Clear the console screen |
@@ -49,12 +60,171 @@ def print_help():
 ## Examples
 
     """
-    console. print(Markdown(help_text))
+    console.print(Markdown(help_text))
+
+
+def handle_crawl(args: str) -> bool:
+    """Handle the crawl command."""
+    if not args:
+        console.print("[red]Error: Please provide a URL to crawl[/red]")
+        console.print("Example: crawl https://example.com")
+        console.print("         crawl https://python.org --depth 2")
+        return True
+    
+    # Parse arguments
+    parts = args.split()
+    url = parts[0]
+    
+    # Parse options
+    max_depth = 2
+    follow_links = True
+    
+    for i, part in enumerate(parts[1:]):
+        if part in ['--depth', '-d'] and i + 1 < len(parts[1:]):
+            try:
+                max_depth = int(parts[i + 2])
+            except (ValueError, IndexError):
+                pass
+        elif part in ['--no-follow', '-n']:
+            follow_links = False
+    
+    # Validate URL
+    if not url.startswith(('http://', 'https://')):
+        console.print("[red]Error: URL must start with http:// or https://[/red]")
+        return True
+    
+    # Confirm crawl
+    console.print(f"\n[cyan]Crawl Configuration:[/cyan]")
+    console.print(f"  URL: {url}")
+    console.print(f"  Max depth: {max_depth}")
+    console. print(f"  Follow links: {follow_links}")
+    
+    if not Confirm.ask("\nStart crawling? ", default=True):
+        console.print("[yellow]Crawl cancelled[/yellow]")
+        return True
+    
+    # Start crawling
+    console.print(f"\n[cyan]🕷️  Starting crawler...[/cyan]\n")
+    
+    try:
+        result = crawl_website(url, max_depth=max_depth, follow_links=follow_links)
+        console.print(f"\n[green]✅ Crawl completed successfully![/green]")
+        
+    except KeyboardInterrupt:
+        console. print(f"\n[yellow]⚠️  Crawl interrupted by user[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]❌ Crawl failed: {e}[/red]")
+        if settings.debug:
+            console.print_exception()
+    
+    return True
+
+
+def handle_list() -> bool:
+    """Handle the list command."""
+    console.print("\n[cyan]📄 Indexed Documents[/cyan]")
+    console.print("─" * 80)
+    
+    try:
+        with get_storage() as storage:
+            documents = storage.get_all_documents(limit=20)
+            
+            if not documents:
+                console.print("[yellow]No documents found.  Use 'crawl' to add content.[/yellow]\n")
+                return True
+            
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Title", style="cyan", width=40)
+            table.add_column("URL", style="blue", width=50)
+            table.add_column("Type", width=8)
+            table.add_column("Length", justify="right", width=10)
+            
+            for i, doc in enumerate(documents, 1):
+                metadata = doc.get('metadata', {})
+                title = metadata.get('title', 'Untitled')[:38]
+                url = metadata.get('source_url', 'Unknown')[:48]
+                source_type = metadata.get('source_type', 'unknown')
+                content_len = len(doc.get('content', ''))
+                
+                table.add_row(
+                    str(i),
+                    title,
+                    url,
+                    source_type,
+                    f"{content_len:,}"
+                )
+            
+            console.print(table)
+            console.print(f"\n[dim]Showing {len(documents)} documents[/dim]\n")
+            
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]\n")
+    
+    return True
+
+
+def handle_stats() -> bool:
+    """Handle the stats command."""
+    console. print("\n[cyan]📊 Database Statistics[/cyan]")
+    console.print("─" * 40)
+    
+    try:
+        with get_storage() as storage:
+            total_docs = storage.count_documents()
+            web_docs = storage.count_documents("web")
+            pdf_docs = storage.count_documents("pdf")
+            
+            stats_table = Table(show_header=False)
+            stats_table.add_column("Metric", style="cyan")
+            stats_table.add_column("Value", style="green", justify="right")
+            
+            stats_table.add_row("Total Documents", str(total_docs))
+            stats_table. add_row("Web Pages", str(web_docs))
+            stats_table.add_row("PDF Documents", str(pdf_docs))
+            stats_table.add_row("Database", storage.database_name)
+            
+            console.print(stats_table)
+            console.print()
+            
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]\n")
+    
+    return True
+
+
+def handle_delete(args: str) -> bool:
+    """Handle the delete command."""
+    if not args:
+        console.print("[red]Error: Please provide a URL to delete[/red]")
+        console.print("Example: delete https://example.com")
+        return True
+    
+    url = args.strip()
+    
+    # Confirm deletion
+    if not Confirm. ask(f"\n[yellow]Delete all documents from {url}?[/yellow]", default=False):
+        console.print("[yellow]Deletion cancelled[/yellow]")
+        return True
+    
+    try:
+        with get_storage() as storage:
+            deleted_count = storage.delete_by_url(url)
+            
+            if deleted_count > 0:
+                console.print(f"[green]✅ Deleted {deleted_count} document(s)[/green]\n")
+            else:
+                console.print(f"[yellow]No documents found for URL: {url}[/yellow]\n")
+                
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]\n")
+    
+    return True
 
 
 def handle_command(command: str) -> bool:
     """
-    Process a user command. 
+    Process a user command.
     
     Returns:
         bool: True to continue, False to exit
@@ -65,11 +235,11 @@ def handle_command(command: str) -> bool:
         return True
     
     parts = command.split(maxsplit=1)
-    cmd = parts[0]. lower()
+    cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
     
     if cmd == "exit" or cmd == "quit":
-        console. print("\n[yellow]Goodbye!  👋[/yellow]\n")
+        console.print("\n[yellow]Goodbye!  👋[/yellow]\n")
         return False
     
     elif cmd == "help":
@@ -84,26 +254,34 @@ def handle_command(command: str) -> bool:
     
     elif cmd == "status":
         console.print("\n[cyan]System Status[/cyan]")
-        console. print("─" * 40)
+        console.print("─" * 40)
         
         if settings.is_configured:
-            console. print("✅ Configuration: Complete")
-            # TODO: Add database connection check
-            # TODO: Add indexed documents count
-            console.print("📊 Indexed Documents: [yellow]Not yet implemented[/yellow]")
-            console.print("🔗 Database: [yellow]Not yet connected[/yellow]")
+            console.print("✅ Configuration: Complete")
+            
+            try:
+                with get_storage() as storage:
+                    doc_count = storage.count_documents()
+                    console.print(f"📊 Indexed Documents: {doc_count}")
+                    console.print(f"🔗 Database: Connected ({storage.database_name})")
+            except Exception as e:
+                console.print(f"🔗 Database: [red]Error - {e}[/red]")
         else:
-            console.print("❌ Configuration: Incomplete")
+            console. print("❌ Configuration: Incomplete")
             console.print("   Run 'config' to see what's missing")
         console.print()
     
     elif cmd == "crawl":
-        if not args:
-            console.print("[red]Error: Please provide a URL to crawl[/red]")
-            console.print("Example: crawl https://example. com")
-        else:
-            console.print(f"\n[cyan]🕷️  Crawling: {args}[/cyan]")
-            console.print("[yellow]⚠️  Crawling not yet implemented - Coming in next step![/yellow]\n")
+        return handle_crawl(args)
+    
+    elif cmd == "list":
+        return handle_list()
+    
+    elif cmd == "stats":
+        return handle_stats()
+    
+    elif cmd == "delete":
+        return handle_delete(args)
     
     elif cmd == "ingest":
         if not args:
@@ -122,8 +300,8 @@ def handle_command(command: str) -> bool:
             console.print("[yellow]⚠️  RAG query not yet implemented - Coming in next step![/yellow]\n")
     
     else:
-        console. print(f"[red]Unknown command: {cmd}[/red]")
-        console. print("Type 'help' for available commands.")
+        console.print(f"[red]Unknown command: {cmd}[/red]")
+        console.print("Type 'help' for available commands.")
     
     return True
 
@@ -138,7 +316,7 @@ def main():
     # Check configuration on startup
     if not settings.is_configured:
         console.print("[yellow]⚠️  Warning: Some configuration is missing![/yellow]")
-        console. print("Run 'config' to see current settings.\n")
+        console.print("Run 'config' to see current settings.\n")
     
     # Main command loop
     running = True

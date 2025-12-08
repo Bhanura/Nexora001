@@ -719,14 +719,4 @@ nexora/
 
 ---
 
-**Document Approval**
-
-| Role | Name | Date | Signature |
-|------|------|------|-----------|
-| Author | Bhanura | 2025-12-02 | _________ |
-| Reviewer | | | _________ |
-| Approver | | | _________ |
-
----
-
 *End of Software Requirements Specification*

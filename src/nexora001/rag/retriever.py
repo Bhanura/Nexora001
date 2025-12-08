@@ -88,7 +88,7 @@ class DocumentRetriever:
                 'found_documents': 0
             }
         
-        # Build context string
+        # Build context string with more metadata
         context_parts = []
         sources = []
         
@@ -97,19 +97,28 @@ class DocumentRetriever:
             metadata = result['metadata']
             score = result['score']
             
-            # Add to context
-            context_parts. append(f"[Document {i}]\n{content}\n")
+            # Add to context with better formatting
+            title = metadata.get('title', 'Unknown')
+            url = metadata.get('source_url', 'Unknown')
+            
+            context_parts.append(
+                f"[Document {i}]\n"
+                f"Source: {title}\n"
+                f"URL: {url}\n"
+                f"Relevance: {score:.2f}\n"
+                f"Content:\n{content}\n"
+            )
             
             # Add to sources
             sources.append({
                 'number': i,
-                'title': metadata.get('title', 'Unknown'),
-                'url': metadata.get('source_url', 'Unknown'),
+                'title': title,
+                'url': url,
                 'score': score,
                 'chunk_index': metadata.get('chunk_index', 0)
             })
         
-        context = "\n".join(context_parts)
+        context = "\n" + "="*80 + "\n".join(context_parts)
         
         return {
             'context': context,

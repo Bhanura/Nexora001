@@ -332,6 +332,11 @@ def handle_command(command: str) -> bool:
                 # Ask question
                 with console.status("[bold cyan]Thinking.. .", spinner="dots"):
                     result = rag.ask(args, use_history=True)
+
+                # DEBUG: Show context (temporary)
+                if settings.debug:
+                    context_preview = result. get('context', '')[:500]
+                    console.print(f"\n[dim]Context sent to AI (first 500 chars):\n{context_preview}...[/dim]\n")                
                 
                 answer = result['answer']
                 sources = result['sources']

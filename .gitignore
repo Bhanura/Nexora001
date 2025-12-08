@@ -4,7 +4,7 @@
 
 # =============== SECRETS - CRITICAL!  ===============
 # Never commit these files
-. env
+.env
 .env. local
 .env. *. local
 *. pem

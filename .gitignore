@@ -5,9 +5,9 @@
 # =============== SECRETS - CRITICAL!  ===============
 # Never commit these files
 .env
-.env. local
-.env. *. local
-*. pem
+.env.*
+!.env.example
+*.pem
 *.key
 secrets/
 config/secrets.json

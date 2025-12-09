@@ -1,0 +1,236 @@
+"""
+Ingestion endpoints for crawling URLs and uploading files. 
+"""
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from typing import Optional
+import sys
+from pathlib import Path
+import tempfile
+import shutil
+import uuid
+
+sys.path.insert(0, str(Path(__file__).parent. parent.parent. parent))
+
+from nexora001.api.models import (
+    CrawlRequest,
+    CrawlResponse,
+    IngestResponse,
+    ErrorResponse
+)
+from nexora001.crawler.manager import crawl_website
+from nexora001.processors.pdf_processor import process_pdf
+from nexora001.processors. docx_processor import process_docx
+
+router = APIRouter()
+
+
+# ============================================================================
+# BACKGROUND TASK STORAGE (In production, use Redis/Celery)
+# ============================================================================
+
+crawl_jobs = {}
+
+
+def background_crawl(job_id: str, url: str, max_depth: int, follow_links: bool, use_playwright: bool):
+    """Background task for crawling."""
+    try:
+        crawl_jobs[job_id] = {"status": "running", "url": url}
+        
+        # Perform crawl
+        result = crawl_website(
+            url=url,
+            max_depth=max_depth,
+            follow_links=follow_links,
+            use_playwright=use_playwright
+        )
+        
+        crawl_jobs[job_id] = {
+            "status": "completed",
+            "url": url,
+            "result":  result
+        }
+        
+    except Exception as e:
+        crawl_jobs[job_id] = {
+            "status": "failed",
+            "url": url,
+            "error": str(e)
+        }
+
+
+# ============================================================================
+# URL CRAWLING ENDPOINTS
+# ============================================================================
+
+@router.post(
+    "/url",
+    response_model=CrawlResponse,
+    responses={
+        200: {"description": "Crawl job started"},
+        400: {"model":  ErrorResponse, "description": "Invalid request"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Crawl a website URL",
+    description="Submit a URL for crawling.  The crawl will run in the background."
+)
+async def ingest_url(
+    request: CrawlRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Start crawling a website URL.
+    
+    The crawler will:
+    1. Fetch the page (with optional JavaScript rendering)
+    2. Extract text content
+    3. Follow internal links up to specified depth
+    4. Chunk and store content with embeddings
+    
+    Returns a job_id to track progress.
+    """
+    try:
+        # Generate unique job ID
+        job_id = str(uuid.uuid4())
+        
+        # Add to background tasks
+        background_tasks.add_task(
+            background_crawl,
+            job_id,
+            str(request.url),
+            request.max_depth,
+            request.follow_links,
+            request.use_playwright
+        )
+        
+        # Store initial status
+        crawl_jobs[job_id] = {
+            "status": "queued",
+            "url":  str(request.url)
+        }
+        
+        return CrawlResponse(
+            job_id=job_id,
+            status="queued",
+            url=str(request.url),
+            message="Crawl job queued successfully"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "InternalError",
+                "message": str(e)
+            }
+        )
+
+
+@router.get(
+    "/url/{job_id}",
+    summary="Get crawl job status",
+    description="Check the status of a crawl job"
+)
+async def get_crawl_status(job_id:  str):
+    """Get the status of a crawl job."""
+    if job_id not in crawl_jobs:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NotFound", "message": f"Job {job_id} not found"}
+        )
+    
+    return crawl_jobs[job_id]
+
+
+# ============================================================================
+# FILE UPLOAD ENDPOINTS
+# ============================================================================
+
+@router.post(
+    "/file",
+    response_model=IngestResponse,
+    responses={
+        200: {"description": "File processed successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid file format"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Upload and process a document",
+    description="Upload a PDF or DOCX file for processing and indexing"
+)
+async def ingest_file(file: UploadFile = File(...)):
+    """
+    Upload and process a document file.
+    
+    Supported formats: 
+    - PDF (. pdf)
+    - Word Document (.docx)
+    
+    The file will be: 
+    1. Saved temporarily
+    2. Text extracted
+    3. Chunked intelligently
+    4. Embedded and stored in database
+    """
+    try:
+        # Validate file type
+        file_ext = Path(file.filename).suffix.lower()
+        
+        if file_ext not in ['.pdf', '.docx']: 
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "InvalidFileType",
+                    "message": f"Unsupported file type:  {file_ext}. Supported: .pdf, .docx"
+                }
+            )
+        
+        # Create temporary file
+        with tempfile. NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            # Save uploaded file
+            shutil.copyfileobj(file.file, temp_file)
+            temp_path = temp_file.name
+        
+        try:
+            # Process based on file type
+            if file_ext == '.pdf':
+                result = process_pdf(temp_path)
+            elif file_ext == '.docx':
+                result = process_docx(temp_path)
+            
+            # Clean up temp file
+            Path(temp_path).unlink()
+            
+            if not result['success']:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "ProcessingError",
+                        "message": result. get('error', 'Failed to process file')
+                    }
+                )
+            
+            return IngestResponse(
+                success=True,
+                filename=file.filename,
+                title=result.get('title', file.filename),
+                chunks_created=result['chunks_created'],
+                total_characters=result['total_characters'],
+                message=f"Successfully processed {file.filename}"
+            )
+            
+        except Exception as e:
+            # Clean up on error
+            if Path(temp_path).exists():
+                Path(temp_path).unlink()
+            raise e
+        
+    except HTTPException: 
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "InternalError",
+                "message": str(e)
+            }
+        )

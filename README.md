@@ -463,7 +463,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact
 
-**Bhanura** - [LinkedIn](https://www.linkedin. com/in/yourprofile)
+**Bhanura** - [LinkedIn](https://www.linkedin.com/in/bhanura-waduge-44b7611a7/)
 
 Project Link: [https://github.com/Bhanura/Nexora001](https://github.com/Bhanura/Nexora001)
 

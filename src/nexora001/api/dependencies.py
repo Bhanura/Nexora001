@@ -50,11 +50,14 @@ def get_storage() -> MongoDBStorage:
     """
     global _storage
     
-    if _storage is None:
+    if _storage is None: 
         _storage = MongoDBStorage()
+        # Make sure it's connected
+        if not hasattr(_storage, 'collection') or _storage.collection is None:
+            # Force reconnection
+            _storage.__init__()
     
     return _storage
-
 
 def reset_dependencies():
     """Reset all singletons (useful for testing)."""

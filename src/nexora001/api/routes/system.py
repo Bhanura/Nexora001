@@ -89,11 +89,11 @@ async def get_status(
     summary="List all documents",
     description="Get a paginated list of all indexed documents"
 )
+
 async def list_documents(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    source_type: Optional[str] = Query(None, description="Filter by type:  web, pdf, docx"),
-    storage: MongoDBStorage = Depends(get_storage)
+    source_type: Optional[str] = Query(None, description="Filter by type:  web, pdf, docx")
 ):
     """
     List all indexed documents with pagination.
@@ -102,38 +102,42 @@ async def list_documents(
     - source_type: Filter by document type (web, pdf, docx)
     """
     try:
-        # Build filter
-        filter_query = {}
-        if source_type:
-            filter_query['metadata.source_type'] = source_type
+        # Use context manager to ensure connection
+        with MongoDBStorage() as storage:
+            # Build filter
+            filter_query = {}
+            if source_type:
+                filter_query['metadata.source_type'] = source_type
+            
+            # Get documents from database
+            skip = (page - 1) * page_size
+            cursor = storage.collection.find(filter_query).skip(skip).limit(page_size)
+            
+            documents = []
+            for doc in cursor:
+                documents.append(DocumentInfo(
+                    id=str(doc['_id']),
+                    title=doc['metadata']. get('title', 'Untitled'),
+                    url=doc['metadata'].get('source_url', ''),
+                    source_type=doc['metadata'].get('source_type', 'unknown'),
+                    created_at=doc['metadata'].get('created_at', datetime.now()),
+                    chunk_count=1,
+                    total_characters=len(doc['content'])
+                ))
+            
+            # Get total count
+            total = storage.collection.count_documents(filter_query)
+            
+            return DocumentListResponse(
+                documents=documents,
+                total=total,
+                page=page,
+                page_size=page_size
+            )
         
-        # Get documents from database
-        skip = (page - 1) * page_size
-        cursor = storage.collection.find(filter_query).skip(skip).limit(page_size)
-        
-        documents = []
-        for doc in cursor:
-            documents.append(DocumentInfo(
-                id=str(doc['_id']),
-                title=doc['metadata']. get('title', 'Untitled'),
-                url=doc['metadata'].get('source_url', ''),
-                source_type=doc['metadata'].get('source_type', 'unknown'),
-                created_at=doc['metadata'].get('created_at', datetime.now()),
-                chunk_count=1,  # Each doc is one chunk
-                total_characters=len(doc['content'])
-            ))
-        
-        # Get total count
-        total = storage.collection.count_documents(filter_query)
-        
-        return DocumentListResponse(
-            documents=documents,
-            total=total,
-            page=page,
-            page_size=page_size
-        )
-        
-    except Exception as e:
+    except Exception as e: 
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail={
@@ -141,38 +145,40 @@ async def list_documents(
                 "message": str(e)
             }
         )
-
 
 @router.get(
     "/documents/stats",
     summary="Get document statistics",
     description="Get detailed statistics about indexed documents"
 )
-async def get_documents_stats(storage: MongoDBStorage = Depends(get_storage)):
+async def get_documents_stats():
     """Get detailed document statistics."""
     try:
-        stats = storage.get_stats()
-        
-        # Get breakdown by type
-        type_pipeline = [
-            {
-                "$group": {
-                    "_id": "$metadata.source_type",
-                    "count": {"$sum": 1}
+        with MongoDBStorage() as storage:
+            stats = storage.get_stats()
+            
+            # Get breakdown by type
+            type_pipeline = [
+                {
+                    "$group": {
+                        "_id": "$metadata.source_type",
+                        "count": {"$sum": 1}
+                    }
                 }
+            ]
+            type_stats = list(storage.collection.aggregate(type_pipeline))
+            
+            return {
+                "total_documents": stats['total_documents'],
+                "unique_sources": stats['unique_sources'],
+                "average_chunk_size": stats['avg_chunk_size'],
+                "by_type": {item['_id']: item['count'] for item in type_stats},
+                "sources":  stats['sources']
             }
-        ]
-        type_stats = list(storage.collection.aggregate(type_pipeline))
-        
-        return {
-            "total_documents": stats['total_documents'],
-            "unique_sources": stats['unique_sources'],
-            "average_chunk_size": stats['avg_chunk_size'],
-            "by_type": {item['_id']: item['count'] for item in type_stats},
-            "sources":  stats['sources']
-        }
         
     except Exception as e: 
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail={
@@ -180,7 +186,6 @@ async def get_documents_stats(storage: MongoDBStorage = Depends(get_storage)):
                 "message": str(e)
             }
         )
-
 
 @router.delete(
     "/documents",

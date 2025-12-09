@@ -342,8 +342,76 @@ class MongoDBStorage:
         if magnitude1 == 0 or magnitude2 == 0:
             return 0.0
         
-        return dot_product / (magnitude1 * magnitude2)    
+        return dot_product / (magnitude1 * magnitude2)   
 
+    def get_stats(self) -> dict:
+        """
+        Get database statistics.
+        
+        Returns:
+            Dictionary with statistics
+        """
+        try:
+            total_docs = self.collection.count_documents({})
+            
+            # Get unique sources
+            sources_pipeline = [
+                {
+                    "$group": {
+                        "_id": "$metadata.source_url"
+                    }
+                }
+            ]
+            unique_sources = len(list(self.collection.aggregate(sources_pipeline)))
+            
+            # Get average chunk size
+            avg_pipeline = [
+                {
+                    "$group": {
+                        "_id": None,
+                        "avg_size": {"$avg": {"$strLenCP": "$content"}}
+                    }
+                }
+            ]
+            avg_result = list(self.collection.aggregate(avg_pipeline))
+            avg_chunk_size = int(avg_result[0]['avg_size']) if avg_result else 0
+            
+            # Get list of sources
+            sources_list_pipeline = [
+                {
+                    "$group": {
+                        "_id":  "$metadata.source_url",
+                        "count": {"$sum": 1},
+                        "type": {"$first": "$metadata.source_type"}
+                    }
+                },
+                {"$limit": 10}
+            ]
+            sources_list = list(self.collection. aggregate(sources_list_pipeline))
+            
+            return {
+                'total_documents': total_docs,
+                'unique_sources': unique_sources,
+                'avg_chunk_size': avg_chunk_size,
+                'sources': [
+                    {
+                        'url': s['_id'],
+                        'count': s['count'],
+                        'type': s. get('type', 'unknown')
+                    }
+                    for s in sources_list
+                ]
+            }
+            
+        except Exception as e: 
+            print(f"Error getting stats: {e}")
+            # Return safe defaults
+            return {
+                'total_documents': 0,
+                'unique_sources': 0,
+                'avg_chunk_size': 0,
+                'sources': []
+            }
 
 # Convenience function
 def get_storage() -> MongoDBStorage:

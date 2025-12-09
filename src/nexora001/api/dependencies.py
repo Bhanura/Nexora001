@@ -1,14 +1,14 @@
 """
-Shared dependencies for FastAPI routes.
+Shared dependencies for FastAPI routes. 
 """
 
 import sys
 from pathlib import Path
 from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).parent. parent. parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from nexora001. rag.pipeline import RAGPipeline
+from nexora001.rag.pipeline import RAGPipeline
 from nexora001.storage.mongodb import MongoDBStorage
 
 
@@ -21,12 +21,7 @@ _storage: Optional[MongoDBStorage] = None
 
 
 def get_rag_pipeline() -> RAGPipeline:
-    """
-    Get or create RAG pipeline instance (singleton).
-    
-    Returns:
-        RAGPipeline instance
-    """
+    """Get or create RAG pipeline instance (singleton)."""
     global _rag_pipeline
     
     if _rag_pipeline is None:
@@ -42,22 +37,14 @@ def get_rag_pipeline() -> RAGPipeline:
 
 
 def get_storage() -> MongoDBStorage:
-    """
-    Get or create storage instance (singleton).
-    
-    Returns:
-        MongoDBStorage instance
-    """
+    """Get or create storage instance (singleton)."""
     global _storage
     
-    if _storage is None: 
+    if _storage is None:
         _storage = MongoDBStorage()
-        # Make sure it's connected
-        if not hasattr(_storage, 'collection') or _storage.collection is None:
-            # Force reconnection
-            _storage.__init__()
     
     return _storage
+
 
 def reset_dependencies():
     """Reset all singletons (useful for testing)."""

@@ -10,7 +10,6 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 import os
 from dotenv import load_dotenv
-from typing import List, Dict, Optional, Any, Tuple
 
 load_dotenv()
 
@@ -33,7 +32,7 @@ class MongoDBStorage:
             raise ValueError("MongoDB URI not provided and MONGODB_URI env var not set")
         
         self.client: MongoClient = MongoClient(self.uri)
-        self. db: Database = self.client[self.database_name]
+        self.db: Database = self.client[self.database_name]
         
         # Collections
         self.documents: Collection = self.db["documents"]
@@ -48,7 +47,7 @@ class MongoDBStorage:
         self.documents. create_index([("metadata.source_url", ASCENDING)])
         
         # Index on crawled_at for time-based queries
-        self.documents.create_index([("metadata.crawled_at", ASCENDING)])
+        self.documents.create_index([("metadata. crawled_at", ASCENDING)])
         
         # Index on source_type
         self.documents.create_index([("metadata.source_type", ASCENDING)])
@@ -71,11 +70,11 @@ class MongoDBStorage:
         Args:
             content: The text content
             source_url: URL or identifier of the source
-            source_type: Type of source ("web", "pdf", "docx")
+            source_type:  Type of source ("web", "pdf", "docx")
             title: Document title
             metadata: Additional metadata
             
-        Returns:
+        Returns: 
             Document ID (string)
         """
         doc = {
@@ -92,141 +91,6 @@ class MongoDBStorage:
         result = self.documents.insert_one(doc)
         return str(result.inserted_id)
     
-    def get_document_by_url(self, source_url: str) -> Optional[Dict]:
-        """
-        Retrieve a document by its source URL. 
-        
-        Args:
-            source_url: The source URL to search for
-            
-        Returns:
-            Document dict or None if not found
-        """
-        return self.documents.find_one({"metadata.source_url": source_url})
-    
-    def url_exists(self, source_url: str) -> bool:
-        """
-        Check if a URL has already been crawled.
-        
-        Args:
-            source_url: The URL to check
-            
-        Returns:
-            True if URL exists in database
-        """
-        return self.documents.count_documents(
-            {"metadata.source_url": source_url}
-        ) > 0
-    
-    def get_all_documents(self, limit: int = 100) -> List[Dict]:
-        """
-        Get all documents from the database.
-        
-        Args:
-            limit: Maximum number of documents to return
-            
-        Returns:
-            List of document dictionaries
-        """
-        return list(self.documents.find(). limit(limit))
-    
-    def count_documents(self, source_type: Optional[str] = None) -> int:
-        """
-        Count documents in the database.
-        
-        Args:
-            source_type: Optional filter by source type
-            
-        Returns:
-            Number of documents
-        """
-        query = {"metadata.source_type": source_type} if source_type else {}
-        return self.documents.count_documents(query)
-    
-    def delete_by_url(self, source_url: str) -> int:
-        """
-        Delete documents by source URL.
-        
-        Args:
-            source_url: The source URL to delete
-            
-        Returns:
-            Number of documents deleted
-        """
-        result = self. documents.delete_many({"metadata.source_url": source_url})
-        return result.deleted_count
-    
-    def create_crawl_job(self, url: str, options: Optional[Dict] = None) -> str:
-        """
-        Create a crawl job record.
-        
-        Args:
-            url: URL to crawl
-            options: Crawl options (depth, follow_links, etc.)
-            
-        Returns:
-            Job ID
-        """
-        job = {
-            "url": url,
-            "status": "pending",
-            "pages_crawled": 0,
-            "documents_created": 0,
-            "started_at": datetime.utcnow(),
-            "completed_at": None,
-            "error_message": None,
-            "options": options or {}
-        }
-        
-        result = self.crawl_jobs. insert_one(job)
-        return str(result.inserted_id)
-    
-    def update_crawl_job(
-        self,
-        job_id: str,
-        status: Optional[str] = None,
-        pages_crawled: Optional[int] = None,
-        documents_created: Optional[int] = None,
-        error_message: Optional[str] = None
-    ):
-        """Update a crawl job's status."""
-        from bson import ObjectId
-        
-        updates = {}
-        if status:
-            updates["status"] = status
-            if status in ["completed", "failed"]:
-                updates["completed_at"] = datetime.utcnow()
-        if pages_crawled is not None:
-            updates["pages_crawled"] = pages_crawled
-        if documents_created is not None:
-            updates["documents_created"] = documents_created
-        if error_message:
-            updates["error_message"] = error_message
-        
-        if updates:
-            self.crawl_jobs.update_one(
-                {"_id": ObjectId(job_id)},
-                {"$set": updates}
-            )
-    
-    def get_crawl_job(self, job_id: str) -> Optional[Dict]:
-        """Get a crawl job by ID."""
-        from bson import ObjectId
-        return self.crawl_jobs.find_one({"_id": ObjectId(job_id)})
-    
-    def close(self):
-        """Close the MongoDB connection."""
-        self.client. close()
-    
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self. close()
-
     def store_document_with_embedding(
         self,
         content: str,
@@ -244,21 +108,21 @@ class MongoDBStorage:
         Args:
             content: The text content
             embedding: The embedding vector
-            source_url: URL or identifier of the source
+            source_url:  URL or identifier of the source
             source_type: Type of source ("web", "pdf", "docx")
             title: Document title
             chunk_index: Index of this chunk
             total_chunks: Total number of chunks
             metadata: Additional metadata
             
-        Returns:
+        Returns: 
             Document ID (string)
         """
         doc = {
             "content": content,
             "embedding": embedding,
-            "metadata": {
-                "source_url": source_url,
+            "metadata":  {
+                "source_url":  source_url,
                 "source_type": source_type,
                 "title": title or source_url,
                 "crawled_at": datetime.utcnow(),
@@ -269,8 +133,84 @@ class MongoDBStorage:
             }
         }
         
-        result = self.documents.insert_one(doc)
+        result = self.documents. insert_one(doc)
         return str(result.inserted_id)
+    
+    def get_document_by_url(self, source_url: str) -> Optional[Dict]:
+        """
+        Retrieve a document by its source URL. 
+        
+        Args:
+            source_url: The source URL to search for
+            
+        Returns: 
+            Document dict or None if not found
+        """
+        return self.documents.find_one({"metadata.source_url": source_url})
+    
+    def url_exists(self, source_url: str) -> bool:
+        """
+        Check if a URL has already been crawled.
+        
+        Args:
+            source_url:  The URL to check
+            
+        Returns: 
+            True if URL exists in database
+        """
+        return self.documents.count_documents(
+            {"metadata.source_url":  source_url}
+        ) > 0
+    
+    def get_all_documents(self, limit: int = 100) -> List[Dict]:
+        """
+        Get all documents from the database.
+        
+        Args:
+            limit: Maximum number of documents to return
+            
+        Returns: 
+            List of document dictionaries
+        """
+        return list(self.documents.find().limit(limit))
+    
+    def count_documents(self, source_type: Optional[str] = None) -> int:
+        """
+        Count documents in the database.
+        
+        Args:
+            source_type:  Optional filter by source type
+            
+        Returns:
+            Number of documents
+        """
+        query = {"metadata.source_type": source_type} if source_type else {}
+        return self.documents.count_documents(query)
+    
+    def delete_by_url(self, source_url: str) -> int:
+        """
+        Delete documents by source URL.
+        
+        Args:
+            source_url: The source URL to delete
+            
+        Returns:
+            Number of documents deleted
+        """
+        result = self.documents.delete_many({"metadata.source_url": source_url})
+        return result. deleted_count
+    
+    def delete_by_source(self, source_url: str) -> int:
+        """
+        Delete documents by source URL (alias for delete_by_url).
+        
+        Args:
+            source_url: The source URL to delete
+            
+        Returns:
+            Number of documents deleted
+        """
+        return self.delete_by_url(source_url)
     
     def vector_search(
         self,
@@ -293,7 +233,7 @@ class MongoDBStorage:
             List of documents with similarity scores
         """
         # Get all documents with embeddings
-        docs = list(self.documents.find(
+        docs = list(self. documents.find(
             {"embedding": {"$exists": True}},
             limit=1000  # Limit for performance
         ))
@@ -304,7 +244,7 @@ class MongoDBStorage:
         # Calculate cosine similarity for each document
         results = []
         for doc in docs:
-            doc_embedding = doc. get("embedding", [])
+            doc_embedding = doc.get("embedding", [])
             if not doc_embedding:
                 continue
             
@@ -318,7 +258,7 @@ class MongoDBStorage:
         # Sort by similarity (descending)
         results.sort(key=lambda x: x['similarity_score'], reverse=True)
         
-        return results[:limit]
+        return results[: limit]
     
     @staticmethod
     def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
@@ -342,8 +282,8 @@ class MongoDBStorage:
         if magnitude1 == 0 or magnitude2 == 0:
             return 0.0
         
-        return dot_product / (magnitude1 * magnitude2)   
-
+        return dot_product / (magnitude1 * magnitude2)
+    
     def get_stats(self) -> dict:
         """
         Get database statistics.
@@ -352,7 +292,8 @@ class MongoDBStorage:
             Dictionary with statistics
         """
         try:
-            total_docs = self.collection.count_documents({})
+            # Use self.documents instead of self.collection
+            total_docs = self.documents.count_documents({})
             
             # Get unique sources
             sources_pipeline = [
@@ -362,7 +303,7 @@ class MongoDBStorage:
                     }
                 }
             ]
-            unique_sources = len(list(self.collection.aggregate(sources_pipeline)))
+            unique_sources = len(list(self.documents.aggregate(sources_pipeline)))
             
             # Get average chunk size
             avg_pipeline = [
@@ -373,7 +314,7 @@ class MongoDBStorage:
                     }
                 }
             ]
-            avg_result = list(self.collection.aggregate(avg_pipeline))
+            avg_result = list(self.documents. aggregate(avg_pipeline))
             avg_chunk_size = int(avg_result[0]['avg_size']) if avg_result else 0
             
             # Get list of sources
@@ -387,7 +328,7 @@ class MongoDBStorage:
                 },
                 {"$limit": 10}
             ]
-            sources_list = list(self.collection. aggregate(sources_list_pipeline))
+            sources_list = list(self.documents. aggregate(sources_list_pipeline))
             
             return {
                 'total_documents': total_docs,
@@ -403,8 +344,11 @@ class MongoDBStorage:
                 ]
             }
             
-        except Exception as e: 
+        except Exception as e:
             print(f"Error getting stats: {e}")
+            import traceback
+            traceback.print_exc()
+            
             # Return safe defaults
             return {
                 'total_documents': 0,
@@ -412,6 +356,78 @@ class MongoDBStorage:
                 'avg_chunk_size': 0,
                 'sources': []
             }
+    
+    def create_crawl_job(self, url:  str, options: Optional[Dict] = None) -> str:
+        """
+        Create a crawl job record.
+        
+        Args:
+            url: URL to crawl
+            options:  Crawl options (depth, follow_links, etc.)
+            
+        Returns:
+            Job ID
+        """
+        job = {
+            "url": url,
+            "status": "pending",
+            "pages_crawled": 0,
+            "documents_created": 0,
+            "started_at": datetime.utcnow(),
+            "completed_at":  None,
+            "error_message": None,
+            "options": options or {}
+        }
+        
+        result = self.crawl_jobs.insert_one(job)
+        return str(result.inserted_id)
+    
+    def update_crawl_job(
+        self,
+        job_id: str,
+        status: Optional[str] = None,
+        pages_crawled: Optional[int] = None,
+        documents_created: Optional[int] = None,
+        error_message: Optional[str] = None
+    ):
+        """Update a crawl job's status."""
+        from bson import ObjectId
+        
+        updates = {}
+        if status: 
+            updates["status"] = status
+            if status in ["completed", "failed"]:
+                updates["completed_at"] = datetime.utcnow()
+        if pages_crawled is not None:
+            updates["pages_crawled"] = pages_crawled
+        if documents_created is not None:
+            updates["documents_created"] = documents_created
+        if error_message: 
+            updates["error_message"] = error_message
+        
+        if updates:
+            self.crawl_jobs.update_one(
+                {"_id":  ObjectId(job_id)},
+                {"$set": updates}
+            )
+    
+    def get_crawl_job(self, job_id: str) -> Optional[Dict]:
+        """Get a crawl job by ID."""
+        from bson import ObjectId
+        return self.crawl_jobs.find_one({"_id": ObjectId(job_id)})
+    
+    def close(self):
+        """Close the MongoDB connection."""
+        self.client. close()
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.close()
+
 
 # Convenience function
 def get_storage() -> MongoDBStorage:

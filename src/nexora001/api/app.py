@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent. parent))
 
-from nexora001. api.routes import chat, ingest, system
+from nexora001. api.routes import chat, ingest, system, admin
 
 # ============================================================================
 # CREATE FASTAPI APP
@@ -59,6 +59,12 @@ app.include_router(
     tags=["System"]
 )
 
+app.include_router(
+    admin.router,
+    prefix="/api/admin",
+    tags=["Admin"]
+)
+
 # ============================================================================
 # ROOT ENDPOINT
 # ============================================================================
@@ -76,7 +82,8 @@ def root():
             "ingest_url": "/api/ingest/url",
             "ingest_file": "/api/ingest/file",
             "status": "/api/status",
-            "documents": "/api/documents"
+            "documents": "/api/documents",
+            "admin": "/api/admin"
         }
     }
 

@@ -168,3 +168,51 @@ class ErrorResponse(BaseModel):
                 "details": {"field": "url"}
             }
         }
+
+# ============================================================================
+# SUPER ADMIN MODELS
+# ============================================================================
+
+class ClientInfo(BaseModel):
+    """Client information model."""
+    id: str
+    name: str
+    email: str
+    api_key: str
+    is_active: bool
+    created_at: datetime
+
+
+class ClientCreate(BaseModel):
+    """Model for creating a new client."""
+    name: str
+    email: str
+
+
+class ClientListResponse(BaseModel):
+    """Response for client listing."""
+    clients: List[ClientInfo]
+    total: int
+
+
+class BanRequest(BaseModel):
+    """Request model for banning a user."""
+    user_id: str
+    reason: str
+
+
+class BanResponse(BaseModel):
+    """Response model for banning a user."""
+    success: bool
+    message: str
+
+
+class NotificationRequest(BaseModel):
+    """Request model for sending a notification."""
+    message: str
+
+
+class NotificationResponse(BaseModel):
+    """Response model for sending a notification."""
+    success: bool
+    message: str

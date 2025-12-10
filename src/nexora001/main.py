@@ -67,23 +67,6 @@ def print_help():
     """
     console.print(Markdown(help_text))
 
-def main():
-    """Main application entry point."""
-    print_banner()
-    
-    console.print("[bold green]Welcome to Nexora001![/bold green]")
-    console.print("Type 'help' for available commands, 'exit' to quit.\n")
-    
-    # Check configuration on startup
-    if not settings.is_configured:
-        console.print("[yellow]⚠️  Warning: Some configuration is missing![/yellow]")
-        console.print("Run 'config' to see current settings.\n")
-    else:
-        # Show quick tips
-        console.print("[dim]💡 Quick tips:[/dim]")
-        console.print("[dim]  • Use 'crawl <url>' to index a website[/dim]")
-        console.print("[dim]  • Use 'ask <question>' to query your knowledge base[/dim]")
-        console.print("[dim]  • Use 'status' to see what's indexed[/dim]\n")
 
 def get_rag_pipeline():
     """Get or create RAG pipeline."""
@@ -503,6 +486,12 @@ def main():
     if not settings.is_configured:
         console.print("[yellow]⚠️  Warning: Some configuration is missing![/yellow]")
         console.print("Run 'config' to see current settings.\n")
+    else:
+        # Show quick tips
+        console.print("[dim]💡 Quick tips:[/dim]")
+        console.print("[dim]  • Use 'crawl <url>' to index a website[/dim]")
+        console.print("[dim]  • Use 'ask <question>' to query your knowledge base[/dim]")
+        console.print("[dim]  • Use 'status' to see what's indexed[/dim]\n")
     
     # Main command loop
     running = True
@@ -516,7 +505,6 @@ def main():
             console.print(f"[red]Error: {e}[/red]")
             if settings.debug:
                 console.print_exception()
-
 
 if __name__ == "__main__":
     main()

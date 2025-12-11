@@ -168,19 +168,36 @@ def handle_crawl(args: str):
         return True
 
     if not args:
-        console.print("[red]Usage: crawl <url>[/red]")
+        console.print("[red]Usage: crawl <url> [--depth N] [--playwright][/red]")
         return True
 
-    url = args.split()[0]
+    # Parse arguments
+    parts = args.split()
+    url = parts[0]
+    
+    # Parse --depth flag
+    max_depth = 2  # Default
+    if '--depth' in parts:
+        try:
+            depth_idx = parts.index('--depth')
+            if depth_idx + 1 < len(parts):
+                max_depth = int(parts[depth_idx + 1])
+        except (ValueError, IndexError):
+            console.print("[yellow]⚠️  Invalid depth, using default: 2[/yellow]")
+    
+    # Parse --playwright flag
+    use_playwright = '--playwright' in parts
     
     # PASS CLIENT_ID TO CRAWLER
     try:
-        console.print(f"\n[cyan]🕷️  Crawling for client: {CURRENT_USER['name']}...[/cyan]")
+        mode = "Playwright (JS)" if use_playwright else "Standard"
+        console.print(f"\n[cyan]🕷️  Crawling for client: {CURRENT_USER['name']} (depth: {max_depth}, mode: {mode})...[/cyan]")
         crawl_website(
             url=url,
-            client_id=CURRENT_USER['_id'],  # <--- CRITICAL UPDATE
-            max_depth=2,
-            follow_links=True
+            client_id=CURRENT_USER['_id'],
+            max_depth=max_depth,
+            follow_links=True,
+            use_playwright=use_playwright
         )
         console.print("[green]✅ Crawl complete and data isolated.[/green]")
     except Exception as e:

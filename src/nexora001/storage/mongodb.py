@@ -72,18 +72,45 @@ class MongoDBStorage:
         except Exception:
             pass  # Index exists or cannot be created
 
-    # --- NEW AUTH METHODS ---
+    # ==========================================
+    # 1. AUTH & USER MANAGEMENT
+    # ==========================================
     def create_user(self, email: str, password_hash: str, name: str) -> str:
         user = {
             "email": email,
             "password_hash": password_hash,
             "name": name,
             "role": "client_admin",
-            "created_at": datetime.utcnow()
+            "created_at": datetime.utcnow(),
+            "status": "active"
         }
         return str(self.users.insert_one(user).inserted_id)
 
-    def generate_api_key(self, client_id: str) -> str:
+    def update_user_profile(self, user_id: str, updates: Dict) -> bool:
+            """Update user details (name, email, etc)."""
+            # Protect against changing role/id/password via this simple method
+            safe_updates = {k: v for k, v in updates.items() if k in ['name', 'email']}
+            if not safe_updates: return False
+            
+            result = self.users.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": safe_updates}
+            )
+            return result.modified_count > 0
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict]:
+        return self.users.find_one({"_id": ObjectId(user_id)})
+
+    # ==========================================
+    # 2. API KEY
+    # ==========================================
+
+    def get_or_create_api_key(self, client_id: str) -> str:
+        """Return existing key if found, otherwise create new one."""
+        existing = self.api_keys.find_one({"client_id": client_id})
+        if existing:
+            return existing["key"]
+            
         key = f"nx_{secrets.token_urlsafe(24)}"
         self.api_keys.insert_one({
             "key": key,
@@ -92,7 +119,56 @@ class MongoDBStorage:
         })
         return key
 
-    # --- UPDATED STORAGE METHODS ---
+    def validate_api_key(self, key: str) -> Optional[str]:
+        doc = self.api_keys.find_one({"key": key})
+        if doc:
+            user = self.users.find_one({"_id": ObjectId(doc['client_id'])})
+            if user and user.get('status') == 'banned':
+                return None
+            return doc['client_id']
+        return None
+
+    # ==========================================
+    # 3. SUPER ADMIN ACTIONS
+    # ==========================================
+
+    def get_all_users(self) -> List[Dict]:
+        users = list(self.users.find({}, {"password_hash": 0}))
+        for user in users:
+            uid = str(user["_id"])
+            user["doc_count"] = self.documents.count_documents({"client_id": uid})
+            user["api_keys"] = self.api_keys.count_documents({"client_id": uid})
+        return users
+
+    def set_user_status(self, email: str, status: str) -> bool:
+        """Ban or Unban a user (status: 'active' or 'banned')."""
+        result = self.users.update_one(
+            {"email": email},
+            {"$set": {"status": status}}
+        )
+        return result.modified_count > 0
+
+    def delete_user_full(self, email: str) -> int:
+        """
+        Hard Delete: Removes User + Documents + Keys + Jobs + Chats.
+        Returns total deleted count.
+        """
+        user = self.users.find_one({"email": email})
+        if not user: return 0
+        
+        uid = str(user["_id"])
+        
+        # Cascade delete
+        d1 = self.documents.delete_many({"client_id": uid}).deleted_count
+        d2 = self.api_keys.delete_many({"client_id": uid}).deleted_count
+        d3 = self.crawl_jobs.delete_many({"client_id": uid}).deleted_count
+        d4 = self.users.delete_one({"_id": user["_id"]}).deleted_count
+        
+        return d1 + d2 + d3 + d4
+
+    # ==========================================
+    # 4. DOCUMENT MANAGEMENT
+    # ==========================================
     def store_document(self, client_id: str, content: str, source_url: str, source_type: str = "web", title: str = None, metadata: Dict = None) -> str:
         # NOTICE: client_id is now the FIRST required argument
         doc = {
@@ -146,8 +222,6 @@ class MongoDBStorage:
         
         results.sort(key=lambda x: x['similarity_score'], reverse=True)
         return results[:limit]
-
-    # ... (Keep the rest of your helper methods like _cosine_similarity) ...
     
     def close(self):
         self.client.close()
@@ -167,6 +241,18 @@ class MongoDBStorage:
     def count_documents(self, client_id: str) -> int:
         """Count total documents for a specific client."""
         return self.documents.count_documents({"client_id": client_id})
+
+    def delete_document_by_id(self, client_id: str, doc_id: str) -> bool:
+        """Delete a single document chunk by its MongoDB _id."""
+        try:
+            # We must convert the string ID to a MongoDB ObjectId
+            from bson import ObjectId
+            result = self.documents.delete_one(
+                {"_id": ObjectId(doc_id), "client_id": client_id}
+            )
+            return result.deleted_count > 0
+        except Exception:
+            return False
 
     def delete_by_url(self, client_id: str, source_url: str) -> int:
         """Delete a client's documents for a specific URL."""

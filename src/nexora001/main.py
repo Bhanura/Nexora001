@@ -149,7 +149,7 @@ def handle_list():
                 return True
             
             table = Table(show_header=True, header_style="bold cyan")
-            table.add_column("#", style="dim", width=4)
+            table.add_column("Doc ID", style="dim", width=24)
             table.add_column("Title", style="cyan", width=40)
             table.add_column("URL", style="blue", width=50)
             table.add_column("Size", justify="right", width=10)
@@ -159,7 +159,7 @@ def handle_list():
                 content_len = len(doc.get('content', ''))
                 
                 table.add_row(
-                    str(i),
+                    str(doc["_id"]),
                     meta.get('title', 'Untitled')[:38],
                     meta.get('source_url', 'Unknown')[:48],
                     f"{content_len:,} ch"
@@ -262,7 +262,7 @@ def handle_apikey():
 
     try:
         with get_storage() as storage:
-            key = storage.generate_api_key(client_id=CURRENT_USER['_id'])
+            key = storage.get_or_create_api_key(client_id=CURRENT_USER['_id'])
             console.print("\n[green]🔑 API Key Generated:[/green]")
             console.print(Panel(key, style="bold yellow"))
             console.print("[dim]Use this in your frontend widget integration.[/dim]\n")
@@ -270,9 +270,47 @@ def handle_apikey():
         console.print(f"[red]Error: {e}[/red]")
     return True
 
+
+def handle_delete_docs(args: str):
+    if not CURRENT_USER: return
+    if not args:
+        console.print("[red]Usage: delete <doc_id> OR delete <url>[/red]")
+        return
+    
+    target = args.split()[0]
+    
+    # Check if input looks like a MongoDB ObjectId (24 hex characters)
+    import re
+    is_id = re.match(r'^[0-9a-fA-F]{24}$', target)
+    
+    with get_storage() as s:
+        if is_id:
+            # DELETE BY ID (Single Chunk)
+            if Confirm.ask(f"Delete single document/chunk {target}?"):
+                success = s.delete_document_by_id(CURRENT_USER['_id'], target)
+                if success:
+                    console.print(f"[green]✅ Document deleted successfully.[/green]")
+                else:
+                    console.print(f"[red]❌ Document not found.[/red]")
+        else:
+            # DELETE BY URL (All chunks from that site)
+            if Confirm.ask(f"Delete ALL documents from URL {target}?"):
+                count = s.delete_by_url(CURRENT_USER['_id'], target)
+                if count > 0:
+                    console.print(f"[green]✅ Deleted {count} documents.[/green]")
+                else:
+                    console.print(f"[yellow]No documents found for that URL.[/yellow]")
+
+
 # ==========================================
 #  SUPER ADMIN COMMANDS
 # ==========================================
+
+def require_admin():
+    if not CURRENT_USER or CURRENT_USER.get('role') != 'super_admin':
+        console.print("[red]⛔ Access Denied: Super Admin only.[/red]")
+        return False
+    return True
 
 def handle_admin_users():
     """List all users and their stats."""
@@ -284,6 +322,7 @@ def handle_admin_users():
         users = storage.get_all_users()
         
         table = Table(title="Nexora Clients", header_style="bold red")
+        table.add_column("ID", style="dim", width=24)
         table.add_column("Name", style="white")
         table.add_column("Email", style="cyan")
         table.add_column("Role", style="magenta")
@@ -293,6 +332,7 @@ def handle_admin_users():
         for u in users:
             status_style = "red" if u.get("status") == "banned" else "green"
             table.add_row(
+                str(u["_id"]),
                 u.get("name", "Unknown"),
                 u["email"],
                 u.get("role", "client"),
@@ -310,6 +350,30 @@ def handle_admin_ban(args: str):
             console.print(f"[red]🚫 User {email} has been BANNED.[/red]")
         else:
             console.print("[yellow]User not found.[/yellow]")
+
+def handle_admin_unban(args: str):
+    if not require_admin(): return
+    email = args.strip()
+    with get_storage() as s:
+        if s.set_user_status(email, "active"):
+            console.print(f"[green]✅ User {email} has been UNBANNED.[/green]")
+        else:
+            console.print("[yellow]User not found.[/yellow]")
+
+def handle_admin_delete_client(args: str):
+    if not require_admin(): return
+    email = args.strip()
+    
+    console.print(f"[bold red]⚠️ WARNING: You are about to delete client {email}[/bold red]")
+    console.print("This will remove their Account, Documents, API Keys, and Chat History.")
+    
+    if Confirm.ask("Are you ABSOLUTELY sure?", default=False):
+        with get_storage() as s:
+            count = s.delete_user_full(email)
+            if count > 0:
+                console.print(f"[green]✅ Deleted user and {count} associated records.[/green]")
+            else:
+                console.print("[yellow]User not found.[/yellow]")
 
 # ==========================================
 #  END USER WIDGET SIMULATION
@@ -351,6 +415,26 @@ def handle_simulate_widget():
                 console.print(f"[dim]Sources: {len(result['sources'])} found[/dim]\n")
 
 # ==========================================
+# CLIENT ADMIN COMMANDS
+# ==========================================
+
+def handle_profile():
+    """View and edit profile."""
+    if not CURRENT_USER: return
+    console.print(Panel(
+        f"Name: {CURRENT_USER.get('name')}\nEmail: {CURRENT_USER['email']}\nRole: {CURRENT_USER.get('role')}",
+        title="👤 Your Profile"
+    ))
+    
+    if Confirm.ask("Do you want to edit your profile?"):
+        new_name = Prompt.ask("New Name", default=CURRENT_USER.get('name'))
+        new_email = Prompt.ask("New Email", default=CURRENT_USER['email'])
+        
+        with get_storage() as s:
+            s.update_user_profile(CURRENT_USER['_id'], {"name": new_name, "email": new_email})
+            console.print("[green]✅ Profile updated! Please re-login to see changes.[/green]")
+
+# ==========================================
 # MAIN LOOP
 # ==========================================
 
@@ -372,12 +456,16 @@ def print_help():
 | `ask <msg>` | Ask question (Searches YOUR data only) |
 | `list` | List your documents |
 | `widget` | Simulate end-user widget chat |
+| `profile` | View and edit your profile |
+| `delete <doc_id>` | Delete a document by ID |
 
 ## Admin Commands (Super Admin only)
 | Command | Description |
 |---------|-------------|
 | `users` | List all users |
 | `ban <email>` | Ban a user by email |
+| `unban <email>` | Unban a user by email |
+| `delete_client <email>` | Delete a client and all their data |
 | `list` | List all documents (all clients) |
 | `delete <doc_id>` | Delete a document by ID |
 | `list_clients` | List all clients |
@@ -418,6 +506,11 @@ def handle_command(command: str) -> bool:
     elif cmd == "widget": handle_simulate_widget()
     elif cmd == "users": handle_admin_users()
     elif cmd == "ban": handle_admin_ban(args)
+    elif cmd == "profile": handle_profile()
+    elif cmd == "delete": handle_delete_docs(args)
+    elif cmd == "unban": handle_admin_unban(args)
+    elif cmd == "delete_client": handle_admin_delete_client(args)
+    
     # Add handlers for list/delete similarly...
     
     else:

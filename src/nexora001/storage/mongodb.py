@@ -241,6 +241,49 @@ class MongoDBStorage:
                 {"_id": ObjectId(job_id)}, 
                 {"$set": updates}
             )
+            
+    # ==========================================
+    # 7. SUPER ADMIN METHODS
+    # ==========================================
+    
+    def get_all_users(self) -> List[Dict]:
+        """Super Admin: Get list of all clients with usage stats."""
+        users = list(self.users.find({}, {"password_hash": 0})) # Hide passwords
+        
+        # Attach usage stats to each user
+        for user in users:
+            user_id = str(user["_id"])
+            user["doc_count"] = self.documents.count_documents({"client_id": user_id})
+            user["api_keys"] = self.api_keys.count_documents({"client_id": user_id})
+            
+        return users
+
+    def ban_user(self, email: str) -> bool:
+        """Super Admin: Ban a client."""
+        result = self.users.update_one(
+            {"email": email},
+            {"$set": {"status": "banned"}}
+        )
+        return result.modified_count > 0
+
+    def unban_user(self, email: str) -> bool:
+        """Super Admin: Activate a client."""
+        result = self.users.update_one(
+            {"email": email},
+            {"$set": {"status": "active"}}
+        )
+        return result.modified_count > 0
+        
+    def validate_api_key(self, key: str) -> Optional[str]:
+        """Widget: Get client_id from API key."""
+        doc = self.api_keys.find_one({"key": key})
+        if doc:
+            # Check if the OWNER is banned
+            user = self.users.find_one({"_id": ObjectId(doc['client_id'])})
+            if user and user.get('status') == 'banned':
+                return None
+            return doc['client_id']
+        return None
 
 def get_storage():
     return MongoDBStorage()

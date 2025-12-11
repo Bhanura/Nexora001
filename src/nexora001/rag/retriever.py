@@ -36,7 +36,7 @@ class DocumentRetriever:
         self.top_k = top_k
         self.min_similarity = min_similarity
     
-    def retrieve(self, query: str) -> List[Dict]:
+    def retrieve(self, query: str, client_id: str) -> List[Dict]:
         """
         Retrieve relevant documents for a query. 
         
@@ -52,11 +52,13 @@ class DocumentRetriever:
         # Search for similar documents
         with get_storage() as storage:
             results = storage.vector_search(
-                query_embedding,
+                client_id=client_id,
+                query_embedding=query_embedding,
                 limit=self.top_k,
                 min_score=self.min_similarity
             )
-        
+    # return results
+
         # Format results
         formatted_results = []
         for result in results:
@@ -69,7 +71,7 @@ class DocumentRetriever:
         
         return formatted_results
     
-    def retrieve_with_context(self, query: str) -> Dict:
+    def retrieve_with_context(self, query: str, client_id: str) -> Dict:
         """
         Retrieve documents and prepare context for LLM.
         
@@ -79,7 +81,7 @@ class DocumentRetriever:
         Returns:
             Dictionary with context and sources
         """
-        results = self.retrieve(query)
+        results = self.retrieve(query, client_id)
         
         if not results:
             return {

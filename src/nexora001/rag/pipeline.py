@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from nexora001.rag.retriever import DocumentRetriever
 from nexora001.rag.generator import AnswerGenerator
+from nexora001.storage.mongodb import get_storage
 
 
 class RAGPipeline:
@@ -51,6 +52,8 @@ class RAGPipeline:
     def ask(
         self,
         query: str,
+        client_id: str,
+        session_id: str = None,
         use_history: bool = True,
         stream: bool = False
     ) -> Dict:
@@ -59,6 +62,8 @@ class RAGPipeline:
         
         Args:
             query: User's question
+            client_id: Client ID for data isolation
+            session_id: Session ID for chat history (optional)
             use_history: Whether to use conversation history
             stream: Whether to stream the response
             
@@ -66,7 +71,7 @@ class RAGPipeline:
             Dictionary with answer, sources, and metadata
         """
         # Step 1: Retrieve relevant documents
-        retrieval_result = self.retriever.retrieve_with_context(query)
+        retrieval_result = self.retriever.retrieve_with_context(query, client_id)
         
         context = retrieval_result['context']
         sources = retrieval_result['sources']
@@ -88,17 +93,22 @@ class RAGPipeline:
                 'streaming': True
             }
         else:
+            # Generate the answer first
             answer = self.generator.generate_answer(query, context, conversation)
             
-            # Add to conversation history
-            self.conversation_history.append({
-                'role': 'user',
-                'content': query
-            })
-            self.conversation_history.append({
-                'role': 'assistant',
-                'content': answer
-            })
+            # Step 3: Save to Memory (In-Memory)
+            self.conversation_history.append({'role': 'user', 'content': query})
+            self.conversation_history.append({'role': 'assistant', 'content': answer})
+
+            # Step 4: Save to Database (Persistent)
+            if session_id:
+                from nexora001.storage.mongodb import get_storage
+                try:
+                    with get_storage() as storage:
+                        storage.add_chat_message(session_id, "user", query)
+                        storage.add_chat_message(session_id, "assistant", answer)
+                except Exception as e:
+                    print(f"Warning: Failed to save chat history: {e}")
             
             return {
                 'answer': answer,
@@ -113,7 +123,7 @@ class RAGPipeline:
     
     def get_history(self) -> List[Dict]:
         """Get conversation history."""
-        return self.conversation_history. copy()
+        return self.conversation_history.copy()
 
 
 # Convenience function

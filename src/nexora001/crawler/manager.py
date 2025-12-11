@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent. parent. parent))
 
 from nexora001. crawler.spider import Nexora001Spider
 from nexora001.crawler import settings as crawler_settings
+from nexora001.storage.mongodb import get_storage
 
 
 class CrawlerManager:
@@ -25,9 +26,10 @@ class CrawlerManager:
     def crawl_url(
         self,
         url: str,
+        client_id: str,
         max_depth: int = 2,
         follow_links: bool = True,
-        use_playwright: bool = False  # NEW PARAMETER
+        use_playwright: bool = False
     ) -> dict:
         """
         Crawl a URL and store content in MongoDB.
@@ -41,6 +43,18 @@ class CrawlerManager:
         Returns:
             Dictionary with crawl statistics
         """
+        
+        # 1. CREATE JOB IN DB
+        with get_storage() as storage:
+            job_id = storage.create_crawl_job(
+                client_id=client_id,
+                url=url,
+                options={
+                    "max_depth": max_depth,
+                    "playwright": use_playwright
+                }
+            )
+        
         # Create crawler settings
         settings = {
             'ROBOTSTXT_OBEY': crawler_settings. ROBOTSTXT_OBEY,
@@ -68,9 +82,11 @@ class CrawlerManager:
         self.process.crawl(
             Nexora001Spider,
             start_url=url,
+            client_id=client_id,
+            job_id=job_id,
             max_depth=max_depth,
             follow_links=follow_links,
-            use_playwright=use_playwright  # PASS NEW PARAMETER
+            use_playwright=use_playwright 
         )
         
         # Start crawling (blocking)
@@ -78,7 +94,9 @@ class CrawlerManager:
         
         return {
             "status": "completed",
+            "job_id": job_id,
             "url": url,
+            "client_id": client_id,
             "max_depth": max_depth,
             "playwright_enabled": use_playwright  # ADDED TO RESPONSE
         }
@@ -86,6 +104,7 @@ class CrawlerManager:
 
 def crawl_website(
     url: str,
+    client_id: str,
     max_depth: int = 2,
     follow_links: bool = True,
     use_playwright: bool = False  # NEW PARAMETER
@@ -103,4 +122,4 @@ def crawl_website(
         Dictionary with crawl statistics
     """
     manager = CrawlerManager()
-    return manager.crawl_url(url, max_depth, follow_links, use_playwright)
+    return manager.crawl_url(url, client_id, max_depth, follow_links, use_playwright)

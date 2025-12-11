@@ -1,28 +1,32 @@
 """
-Nexora001 - Main Console Application Entry Point
+Nexora002 - Main Console Application Entry Point
 
-This is the interactive console interface for the Nexora001 system.
+This is the interactive console interface for the Nexora002 system.
 """
 
 import sys
 from pathlib import Path
 from rich.console import Console
-from rich. panel import Panel
+from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from rich.markdown import Markdown
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
+import hashlib
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from nexora001. config import settings, print_config_status
+from nexora001.config import settings, print_config_status
 from nexora001.storage.mongodb import get_storage
-from nexora001. crawler.manager import crawl_website
+from nexora001.crawler.manager import crawl_website
 from nexora001.rag.pipeline import create_rag_pipeline
 
 console = Console()
 
+# --- SESSION STATE ---
+# This simulates the "Logged In" user
+CURRENT_USER = None
 # Global RAG pipeline (initialized on first use)
 _rag_pipeline = None
 
@@ -36,158 +40,119 @@ def print_banner():
     ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝██║  ██║██║  ██║   ╚██████╔╝╚██████╔╝ ██║
     ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝    ╚═════╝  ╚═════╝  ╚═╝
                                                                              
-           AI-Powered Knowledge Base Chatbot with RAG
+           AI-Powered Knowledge Base Chatbot with RAG -- Multi-Tenant SaaS Edition
     """
-    console.print(Panel(banner, style="bold blue"))
-
-
-def print_help():
-    """Display available commands."""
-    help_text = """
-## Available Commands
-
-| Command | Description |
-|---------|-------------|
-| `crawl <url>` | Crawl a website and index its content |
-| `ingest <file>` | Ingest a PDF or document file |
-| `ask <question>` | Ask a question about indexed content |
-| `history` | Show conversation history |
-| `clear-history` | Clear conversation history |
-| `list` | List all indexed documents |
-| `stats` | Show database statistics |
-| `delete <url>` | Delete documents from a specific URL |
-| `status` | View system and database status |
-| `config` | View current configuration |
-| `clear` | Clear the console screen |
-| `help` | Show this help message |
-| `exit` | Exit the application |
-
-## Examples
-
-    """
-    console.print(Markdown(help_text))
+    console.print(Panel(banner, style="bold Purple"))
 
 
 def get_rag_pipeline():
     """Get or create RAG pipeline."""
     global _rag_pipeline
-    
     if _rag_pipeline is None:
-        console.print("[dim]Initializing AI system.. .[/dim]")
+        console.print("[dim]Initializing AI Engine...[/dim]")
         try:
+            # Note: We don't pass client_id here anymore, we pass it during 'ask'
             _rag_pipeline = create_rag_pipeline(
                 embedding_provider="sentence_transformers",
-                model_name="gemini-2.5-flash",
-                top_k=5,
-                min_similarity=0.3
+                model_name="gemini-2.5-flash"
             )
-            console.print("[dim]✓ AI ready[/dim]\n")
         except Exception as e:
-            console.print(f"[red]Failed to initialize AI: {e}[/red]\n")
+            console.print(f"[red]AI Init Failed: {e}[/red]")
             return None
-    
     return _rag_pipeline
 
+# ==========================================
+# AUTH COMMANDS
+# ==========================================
 
-def handle_crawl(args: str) -> bool:
-    """Handle the crawl command."""
-    if not args:
-        console.print("[red]Error: Please provide a URL to crawl[/red]")
-        console.print("Example: crawl https://example.com")
-        console.print("         crawl https://python.org --depth 2")
-        console.print("         crawl https://example.com --playwright")
-        return True
+def handle_register():
+    console.print("\n[cyan]📝 Create New Client Account[/cyan]")
+    email = Prompt.ask("Email")
+    password = Prompt.ask("Password", password=True)
+    name = Prompt.ask("Company/Name")
     
-    # Parse arguments
-    parts = args.split()
-    url = parts[0]
-    
-    # Parse options
-    max_depth = 2
-    follow_links = True
-    use_playwright = False
-    
-    for i, part in enumerate(parts[1:]):
-        if part in ['--depth', '-d'] and i + 1 < len(parts[1:]):
-            try:
-                max_depth = int(parts[i + 2])
-            except (ValueError, IndexError):
-                pass
-        elif part in ['--no-follow', '-n']:
-            follow_links = False
-        elif part in ['--playwright', '-p', '--js']:
-            use_playwright = True
-    
-    # Validate URL
-    if not url.startswith(('http://', 'https://')):
-        console.print("[red]Error: URL must start with http:// or https://[/red]")
-        return True
-    
-    # Confirm crawl
-    console.print(f"\n[cyan]Crawl Configuration:[/cyan]")
-    console.print(f"  URL: {url}")
-    console.print(f"  Max depth: {max_depth}")
-    console. print(f"  Follow links: {follow_links}")
-    console.print(f"  JavaScript rendering: {use_playwright}")
-    
-    if not Confirm.ask("\nStart crawling? ", default=True):
-        console. print("[yellow]Crawl cancelled[/yellow]")
-        return True
-    
-    # Start crawling
-    console.print(f"\n[cyan]🕷️  Starting crawler.. .[/cyan]\n")
+    # Simple hash for demo (Use bcrypt in production!)
+    pass_hash = hashlib.sha256(password.encode()).hexdigest()
     
     try:
-        result = crawl_website(
-            url,
-            max_depth=max_depth,
-            follow_links=follow_links,
-            use_playwright=use_playwright
-        )
-        console.print(f"\n[green]✅ Crawl completed successfully![/green]")
-        
-    except KeyboardInterrupt:
-        console. print(f"\n[yellow]⚠️  Crawl interrupted by user[/yellow]")
+        with get_storage() as storage:
+            user_id = storage.create_user(email, pass_hash, name=name)
+            console.print(f"[green]✅ Account created! ID: {user_id}[/green]")
+            console.print("Please login now.")
     except Exception as e:
-        console.print(f"\n[red]❌ Crawl failed: {e}[/red]")
-        if settings.debug:
-            console.print_exception()
-    
-    return True
+        console.print(f"[red]Error: {e}[/red]")
 
-def handle_list() -> bool:
-    """Handle the list command."""
-    console.print("\n[cyan]📄 Indexed Documents[/cyan]")
+def handle_login():
+    global CURRENT_USER
+    console.print("\n[cyan]🔐 Login[/cyan]")
+    email = Prompt.ask("Email")
+    password = Prompt.ask("Password", password=True)
+    pass_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    with get_storage() as storage:
+        # Find user
+        user = storage.users.find_one({"email": email, "password_hash": pass_hash})
+        
+        if user:
+            CURRENT_USER = user
+            CURRENT_USER["_id"] = str(user["_id"]) # Convert ObjectId to string
+            console.print(f"\n[green]👋 Welcome back, {user.get('name')}![/green]")
+            console.print(f"[dim]Client ID: {CURRENT_USER['_id']}[/dim]\n")
+        else:
+            console.print("[red]❌ Invalid credentials[/red]\n")
+
+def handle_whoami():
+    if CURRENT_USER:
+        console.print(Panel(
+            f"User: {CURRENT_USER['name']}\nEmail: {CURRENT_USER['email']}\nRole: {CURRENT_USER['role']}\nID: {CURRENT_USER['_id']}",
+            title="👤 Current Session",
+            border_style="green"
+        ))
+    else:
+        console.print("[yellow]🕵️  You are currently: GUEST (Not logged in)[/yellow]")
+
+# ==========================================
+# CORE COMMANDS (UPDATED)
+# ==========================================
+
+def handle_list():
+    if not CURRENT_USER:
+        console.print("[red]⛔ Access Denied: Please 'login' first.[/red]")
+        return True
+
+    console.print(f"\n[cyan]📄 Documents for {CURRENT_USER['name']}[/cyan]")
     console.print("─" * 80)
     
     try:
         with get_storage() as storage:
-            documents = storage.get_all_documents(limit=20)
+            # Fetch ONLY this client's documents
+            # Note: We use .find() directly here for simplicity
+            cursor = storage.documents.find(
+                {"client_id": CURRENT_USER['_id']},
+                {"metadata": 1, "content": 1}
+            ).limit(20)
+            
+            documents = list(cursor)
             
             if not documents:
-                console.print("[yellow]No documents found.  Use 'crawl' to add content.[/yellow]\n")
+                console.print("[yellow]No documents found. Use 'crawl' to add content.[/yellow]\n")
                 return True
             
             table = Table(show_header=True, header_style="bold cyan")
             table.add_column("#", style="dim", width=4)
             table.add_column("Title", style="cyan", width=40)
             table.add_column("URL", style="blue", width=50)
-            table.add_column("Type", width=8)
-            table.add_column("Length", justify="right", width=10)
+            table.add_column("Size", justify="right", width=10)
             
             for i, doc in enumerate(documents, 1):
-                metadata = doc.get('metadata', {})
-                title = metadata.get('title', 'Untitled')[:38]
-                url = metadata.get('source_url', 'Unknown')[:48]
-                source_type = metadata.get('source_type', 'unknown')
+                meta = doc.get('metadata', {})
                 content_len = len(doc.get('content', ''))
                 
                 table.add_row(
                     str(i),
-                    title,
-                    url,
-                    source_type,
-                    f"{content_len:,}"
+                    meta.get('title', 'Untitled')[:38],
+                    meta.get('source_url', 'Unknown')[:48],
+                    f"{content_len:,} ch"
                 )
             
             console.print(table)
@@ -195,316 +160,159 @@ def handle_list() -> bool:
             
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]\n")
-    
     return True
 
+def handle_crawl(args: str):
+    if not CURRENT_USER:
+        console.print("[red]⛔ Access Denied: Please 'login' first.[/red]")
+        return True
 
-def handle_stats() -> bool:
-    """Handle the stats command."""
-    console. print("\n[cyan]📊 Database Statistics[/cyan]")
-    console.print("─" * 40)
-    
-    try:
-        with get_storage() as storage:
-            total_docs = storage.count_documents()
-            web_docs = storage.count_documents("web")
-            pdf_docs = storage.count_documents("pdf")
-            
-            stats_table = Table(show_header=False)
-            stats_table.add_column("Metric", style="cyan")
-            stats_table.add_column("Value", style="green", justify="right")
-            
-            stats_table.add_row("Total Documents", str(total_docs))
-            stats_table. add_row("Web Pages", str(web_docs))
-            stats_table.add_row("PDF Documents", str(pdf_docs))
-            stats_table.add_row("Database", storage.database_name)
-            
-            console.print(stats_table)
-            console.print()
-            
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]\n")
-    
-    return True
-
-
-def handle_delete(args: str) -> bool:
-    """Handle the delete command."""
     if not args:
-        console.print("[red]Error: Please provide a URL to delete[/red]")
-        console.print("Example: delete https://example.com")
+        console.print("[red]Usage: crawl <url>[/red]")
+        return True
+
+    url = args.split()[0]
+    
+    # PASS CLIENT_ID TO CRAWLER
+    try:
+        console.print(f"\n[cyan]🕷️  Crawling for client: {CURRENT_USER['name']}...[/cyan]")
+        crawl_website(
+            url=url,
+            client_id=CURRENT_USER['_id'],  # <--- CRITICAL UPDATE
+            max_depth=2,
+            follow_links=True
+        )
+        console.print("[green]✅ Crawl complete and data isolated.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+    return True
+
+def handle_ask(args: str):
+    if not CURRENT_USER:
+        console.print("[red]⛔ Access Denied: Please 'login' first.[/red]")
         return True
     
-    url = args.strip()
-    
-    # Confirm deletion
-    if not Confirm. ask(f"\n[yellow]Delete all documents from {url}?[/yellow]", default=False):
-        console.print("[yellow]Deletion cancelled[/yellow]")
+    if not args:
+        console.print("[red]Usage: ask <question>[/red]")
         return True
+
+    rag = get_rag_pipeline()
+    if not rag: return True
+
+    console_session_id = f"session-session-{CURRENT_USER['_id']}"
+
+    console.print(f"\n[cyan]🤔 Searching knowledge base for {CURRENT_USER['name']}...[/cyan]")
     
     try:
-        with get_storage() as storage:
-            deleted_count = storage.delete_by_url(url)
-            
-            if deleted_count > 0:
-                console.print(f"[green]✅ Deleted {deleted_count} document(s)[/green]\n")
-            else:
-                console.print(f"[yellow]No documents found for URL: {url}[/yellow]\n")
+        # PASS CLIENT_ID TO RAG
+        result = rag.ask(
+            query=args, 
+            client_id=CURRENT_USER['_id'],
+            session_id=console_session_id,
+            use_history=True
+        )
+        
+        console.print(Panel(Markdown(result['answer']), title="🤖 Nexora AI"))
+        
+        if result.get('sources'):
+            console.print("\n[dim]📚 Sources (Authenticated Access Only):[/dim]")
+            for src in result['sources']:
+                console.print(f" - {src['url']} ({src['score']:.0%})")
                 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]\n")
-    
+        console.print(f"[red]Error: {e}[/red]")
     return True
 
+def handle_apikey():
+    """Generate API Key for the current user."""
+    if not CURRENT_USER:
+        console.print("[red]⛔ Please login first.[/red]")
+        return True
+
+    if CURRENT_USER['role'] != 'client_admin':
+        console.print("[red]⛔ Only Client Admins can generate keys.[/red]")
+        return True
+
+    try:
+        with get_storage() as storage:
+            key = storage.generate_api_key(client_id=CURRENT_USER['_id'])
+            console.print("\n[green]🔑 API Key Generated:[/green]")
+            console.print(Panel(key, style="bold yellow"))
+            console.print("[dim]Use this in your frontend widget integration.[/dim]\n")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+    return True
+
+# ==========================================
+# MAIN LOOP
+# ==========================================
+
+def print_help():
+    help_text = """
+## Authentication
+| Command | Description |
+|---------|-------------|
+| `register` | Create a new Client Admin account |
+| `login` | Log in to an account |
+| `whoami` | Show current user |
+| `apikey` | Generate widget key (Client Admin only) |
+
+## Knowledge Base
+| Command | Description |
+|---------|-------------|
+| `crawl <url>` | Crawl website (Saved to YOUR account) |
+| `ask <msg>` | Ask question (Searches YOUR data only) |
+| `list` | List your documents |
+| `exit` | Quit |
+    """
+    console.print(Markdown(help_text))
 
 def handle_command(command: str) -> bool:
-    """
-    Process a user command.
-    
-    Returns:
-        bool: True to continue, False to exit
-    """
     command = command.strip()
-    
-    if not command:
-        return True
+    if not command: return True
     
     parts = command.split(maxsplit=1)
     cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
-    
-    if cmd == "exit" or cmd == "quit":
-        console.print("\n[yellow]Goodbye!  👋[/yellow]\n")
-        return False
-    
-    elif cmd == "help":
-        print_help()
-    
-    elif cmd == "config":
-        print_config_status()
-    
-    elif cmd == "clear":
-        console.clear()
-        print_banner()
-    
-    elif cmd == "status":
-        console.print("\n[cyan]System Status[/cyan]")
-        console.print("─" * 40)
-        
-        if settings.is_configured:
-            console.print("✅ Configuration: Complete")
-            
-            try:
-                with get_storage() as storage:
-                    doc_count = storage.count_documents()
-                    console.print(f"📊 Indexed Documents: {doc_count}")
-                    console.print(f"🔗 Database: Connected ({storage.database_name})")
-            except Exception as e:
-                console.print(f"🔗 Database: [red]Error - {e}[/red]")
-        else:
-            console. print("❌ Configuration: Incomplete")
-            console.print("   Run 'config' to see what's missing")
-        console.print()
-    
-    elif cmd == "crawl":
-        return handle_crawl(args)
-    
-    elif cmd == "list":
-        return handle_list()
-    
-    elif cmd == "stats":
-        return handle_stats()
-    
-    elif cmd == "delete":
-        return handle_delete(args)
-    
-    elif cmd == "ingest":
-        if not args:
-            console.print("[red]Error: Please provide a file path[/red]")
-            console.print("Example: ingest document.pdf")
-            console.print("         ingest report.docx")
-        else:
-            file_path = args. strip()
-            
-            # Check if file exists
-            from pathlib import Path
-            path = Path(file_path)
-            
-            if not path.exists():
-                console.print(f"[red]Error: File not found: {file_path}[/red]\n")
-                return True
-            
-            # Determine file type
-            file_ext = path.suffix.lower()
-            
-            if file_ext == ".pdf":
-                console.print(f"\n[cyan]📄 Ingesting PDF: {path.name}[/cyan]\n")
-                
-                try:
-                    from nexora001.processors.pdf_processor import process_pdf
-                    
-                    with console.status("[bold cyan]Processing PDF...", spinner="dots"):
-                        result = process_pdf(str(path))
-                    
-                    if result['success']:
-                        console.print(f"[green]✅ PDF ingested successfully![/green]")
-                        console.print(f"  Title: {result['title']}")
-                        console.print(f"  Pages: {result['pages']}")
-                        console.print(f"  Chunks created: {result['chunks_created']}")
-                        console.print(f"  Characters: {result['total_characters']:,}\n")
-                    else:
-                        console.print(f"[red]❌ Failed: {result. get('error', 'Unknown error')}[/red]\n")
-                        
-                except Exception as e:
-                    console.print(f"[red]❌ Error processing PDF: {e}[/red]\n")
-                    if settings.debug:
-                        console.print_exception()
-            
-            elif file_ext == ".docx":
-                console.print(f"\n[cyan]📝 Ingesting DOCX: {path.name}[/cyan]\n")
-                
-                try:
-                    from nexora001.processors.docx_processor import process_docx
-                    
-                    with console.status("[bold cyan]Processing DOCX...", spinner="dots"):
-                        result = process_docx(str(path))
-                    
-                    if result['success']:
-                        console.print(f"[green]✅ DOCX ingested successfully![/green]")
-                        console.print(f"  Title: {result['title']}")
-                        console.print(f"  Paragraphs: {result['paragraphs']}")
-                        console.print(f"  Chunks created: {result['chunks_created']}")
-                        console.print(f"  Characters: {result['total_characters']:,}\n")
-                    else:
-                        console.print(f"[red]❌ Failed: {result.get('error', 'Unknown error')}[/red]\n")
-                        
-                except Exception as e:
-                    console.print(f"[red]❌ Error processing DOCX: {e}[/red]\n")
-                    if settings.debug:
-                        console.print_exception()
-            
-            else:
-                console.print(f"[red]Error: Unsupported file type: {file_ext}[/red]")
-                console.print("Supported formats: . pdf, .docx\n")
-    
-    elif cmd == "ask":
-        if not args:
-            console.print("[red]Error: Please provide a question[/red]")
-            console.print("Example: ask What is machine learning?")
-        else:
-            console.print(f"\n[cyan]🤔 Question:[/cyan] {args}\n")
-            
-            # Get RAG pipeline
-            rag = get_rag_pipeline()
-            if not rag:
-                return True
-            
-            try:
-                # Ask question
-                with console.status("[bold cyan]Thinking.. .", spinner="dots"):
-                    result = rag.ask(args, use_history=True)
-       
-                answer = result['answer']
-                sources = result['sources']
-                found_docs = result['found_documents']
-                
-                # Display answer
-                from rich.markdown import Markdown
-                console.print(Panel(
-                    Markdown(answer),
-                    title=f"🤖 Answer (from {found_docs} sources)",
-                    border_style="green"
-                ))
-                
-                # Display sources
-                if sources:
-                    console.print("\n[bold]📚 Sources:[/bold]")
-                    for source in sources:
-                        console.print(
-                            f"  [{source['number']}] {source['title']} "
-                            f"(relevance: {source['score']:.0%})"
-                        )
-                        console.print(f"      [blue]{source['url']}[/blue]")
-                
-                console.print()
-                
-            except Exception as e:
-                console.print(f"[red]Error: {e}[/red]\n")
-                if settings.debug:
-                    console.print_exception()
 
-    elif cmd == "history":
-        """Show conversation history."""
-        rag = get_rag_pipeline()
-        if not rag:
-            return True
-        
-        history = rag.get_history()
-        
-        if not history:
-            console.print("[yellow]No conversation history yet.[/yellow]\n")
-            return True
-        
-        console.print("\n[cyan]📜 Conversation History[/cyan]")
-        console.print("─" * 60)
-        
-        for i, msg in enumerate(history, 1):
-            role = msg['role']
-            content = msg['content'][:100] + "..." if len(msg['content']) > 100 else msg['content']
-            
-            if role == "user":
-                console.print(f"\n[bold cyan]You:[/bold cyan] {content}")
-            else:
-                console. print(f"[bold green]AI:[/bold green] {content}")
-        
-        console.print()
+    if cmd == "exit": return False
+    elif cmd == "help": print_help()
+    elif cmd == "clear": console.clear(); print_banner()
     
-    elif cmd == "clear-history":
-        """Clear conversation history."""
-        rag = get_rag_pipeline()
-        if not rag:
-            return True
-        
-        rag.clear_history()
-        console.print("[green]✓ Conversation history cleared[/green]\n")
-
+    # Auth Commands
+    elif cmd == "register": handle_register()
+    elif cmd == "login": handle_login()
+    elif cmd == "whoami": handle_whoami()
+    elif cmd == "apikey": handle_apikey()
+    
+    # Core Commands
+    elif cmd == "crawl": handle_crawl(args)
+    elif cmd == "ask": handle_ask(args)
+    elif cmd == "list": handle_list()
+    # Add handlers for list/delete similarly...
+    
     else:
-        console.print(f"[red]Unknown command: {cmd}[/red]")
-        console.print("Type 'help' for available commands.")
+        console.print(f"[red]Unknown command. Try 'help'.[/red]")
     
     return True
 
-
 def main():
-    """Main application entry point."""
     print_banner()
+    console.print("[yellow]⚠️  System Mode: Multi-Tenant SaaS Simulation[/yellow]")
+    console.print("Please `register` or `login` to begin.\n")
     
-    console.print("[bold green]Welcome to Nexora001![/bold green]")
-    console.print("Type 'help' for available commands, 'exit' to quit.\n")
-    
-    # Check configuration on startup
-    if not settings.is_configured:
-        console.print("[yellow]⚠️  Warning: Some configuration is missing![/yellow]")
-        console.print("Run 'config' to see current settings.\n")
-    else:
-        # Show quick tips
-        console.print("[dim]💡 Quick tips:[/dim]")
-        console.print("[dim]  • Use 'crawl <url>' to index a website[/dim]")
-        console.print("[dim]  • Use 'ask <question>' to query your knowledge base[/dim]")
-        console.print("[dim]  • Use 'status' to see what's indexed[/dim]\n")
-    
-    # Main command loop
     running = True
     while running:
         try:
-            command = Prompt.ask("[bold cyan]nexora001[/bold cyan]")
+            # Change prompt color based on login status
+            prompt_str = f"[bold green]{CURRENT_USER['name']}[/bold green]" if CURRENT_USER else "[bold red]Guest[/bold red]"
+            command = Prompt.ask(f"{prompt_str}@nexora")
             running = handle_command(command)
         except KeyboardInterrupt:
-            console.print("\n[yellow]Use 'exit' to quit[/yellow]")
+            console.print("\n[yellow]Goodbye![/yellow]")
+            break
         except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
-            if settings.debug:
-                console.print_exception()
+            console.print(f"[red]System Error: {e}[/red]")
 
 if __name__ == "__main__":
     main()

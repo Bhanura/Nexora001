@@ -2,15 +2,16 @@
 
 <div align="center">
 
-![Nexora001 Banner](https://img.shields.io/badge/Nexora001-AI_Knowledge_Base-blue? style=for-the-badge)
+![Nexora001 Banner](https://img.shields.io/badge/Nexora001-AI_Knowledge_Base-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.13+-green?style=for-the-badge&logo=python)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green?style=for-the-badge&logo=mongodb)
 ![Gemini](https://img.shields.io/badge/Google-Gemini_AI-blue?style=for-the-badge&logo=google)
+![FastAPI](https://img.shields.io/badge/FastAPI-Latest-teal?style=for-the-badge&logo=fastapi)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 
-**An intelligent AI-powered knowledge base chatbot using Retrieval-Augmented Generation (RAG)**
+**An intelligent multi-tenant AI-powered knowledge base with REST API and RAG**
 
-[Features](#-features) • [Demo](#-demo) • [Installation](#-installation) • [Usage](#-usage) • [Architecture](#-architecture) • [Roadmap](#-roadmap)
+[Features](#-features) • [Demo](#-demo) • [Installation](#-installation) • [API](#-api-documentation) • [Architecture](#-architecture)
 
 </div>
 
@@ -18,19 +19,37 @@
 
 ## 🌟 Overview
 
-Nexora001 is a production-ready AI chatbot that:
-- 🕷️ **Crawls websites** (including JavaScript-rendered pages)
+Nexora001 is a **production-ready multi-tenant AI knowledge base** that:
+- 🕷️ **Crawls websites** (static HTML + JavaScript with Playwright)
 - 📄 **Ingests documents** (PDF, DOCX)
 - 🧠 **Generates vector embeddings** (384-dimensional)
 - 🔍 **Performs semantic search** (cosine similarity)
-- 💬 **Answers questions** using Google Gemini AI with source citations
+- 💬 **Answers questions** using Google Gemini AI with RAG
+- 🔐 **Multi-tenant architecture** with JWT authentication
+- 🚀 **REST API** with FastAPI + Swagger documentation
 - 🎨 **Beautiful console interface** with Rich UI
 
-**Built with:** Python, Scrapy, Playwright, MongoDB Atlas, sentence-transformers, Google Gemini API
+**Built with:** Python 3.13, FastAPI, Scrapy, Playwright, MongoDB Atlas, sentence-transformers, Google Gemini 2.5 Flash
 
 ---
 
 ## ✨ Features
+
+### 🔐 **Multi-Tenant Architecture**
+- JWT-based authentication
+- User registration and login
+- Per-user data isolation
+- API key generation for widget integration
+- Super admin controls
+
+### 🌐 **REST API (FastAPI)**
+- Full RESTful API with OpenAPI/Swagger docs
+- Authentication endpoints (register, login, profile)
+- Ingestion endpoints (URL crawling, file upload)
+- Chat endpoints (RAG Q&A, streaming responses)
+- System endpoints (status, documents, statistics)
+- Admin endpoints (user management)
+- Postman collection included
 
 ### 🕷️ **Intelligent Web Crawling**
 - Static HTML crawling with Scrapy
@@ -38,6 +57,7 @@ Nexora001 is a production-ready AI chatbot that:
 - Configurable crawl depth
 - Respects robots.txt
 - Rate limiting & duplicate detection
+- Background job processing
 
 ### 📄 **Multi-Format Document Processing**
 - **PDF** extraction with PyMuPDF
@@ -48,12 +68,14 @@ Nexora001 is a production-ready AI chatbot that:
 ### 🧠 **Vector Search & RAG**
 - Local embeddings with sentence-transformers (all-MiniLM-L6-v2)
 - 384-dimensional vectors stored in MongoDB
-- Semantic similarity search
+- Semantic similarity search with cosine similarity
 - Retrieval-Augmented Generation with Google Gemini 2.5 Flash
+- Context-aware responses with source citations
 
 ### 💬 **Conversational AI**
-- Context-aware multi-turn conversations
-- Conversation history tracking
+- Multi-turn conversations with context
+- Chat history tracking per session
+- Streaming responses (Server-Sent Events)
 - Source citation in answers
 - Relevance scoring
 
@@ -182,15 +204,86 @@ DEBUG=false
 ```
 
 ### Step 5: Run Application
+
+**Option 1: Console Application**
 ```bash
 python run.py
 ```
+
+**Option 2: REST API Server**
+```bash
+python run_api.py
+```
+
+API will be available at:
+- 📚 **Swagger Docs**: http://localhost:8000/docs
+- 📖 **ReDoc**: http://localhost:8000/redoc
+- 🔧 **OpenAPI JSON**: http://localhost:8000/openapi.json
+
+---
+
+## 🌐 API Documentation
+
+### Authentication Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| POST | `/api/auth/register` | Register new user | ❌ |
+| POST | `/api/auth/login` | Login and get JWT token | ❌ |
+| GET | `/api/auth/me` | Get current user profile | ✅ |
+| PUT | `/api/auth/me` | Update user profile | ✅ |
+| POST | `/api/auth/api-key` | Generate widget API key | ✅ |
+
+### Ingestion Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| POST | `/api/ingest/url` | Start URL crawling job | ✅ |
+| GET | `/api/ingest/url/{job_id}` | Get crawl job status | ❌ |
+| POST | `/api/ingest/file` | Upload PDF/DOCX file | ✅ |
+
+### Chat Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| POST | `/api/chat/ask` | Ask question (RAG) | ✅ |
+| POST | `/api/chat/ask/stream` | Ask question (streaming) | ✅ |
+| POST | `/api/chat/widget/ask` | Widget endpoint | API Key |
+| GET | `/api/chat/history/{session_id}` | Get chat history | ✅ |
+
+### System Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| GET | `/api/status` | Get system status | ❌ |
+| GET | `/api/documents` | List documents (paginated) | ✅ |
+| GET | `/api/documents/stats` | Get document statistics | ❌ |
+| DELETE | `/api/documents?doc_id=X` | Delete document by ID | ✅ |
+| DELETE | `/api/documents/by-source` | Delete by source URL | ✅ |
+| DELETE | `/api/documents/all` | Delete all documents | ✅ |
+
+### Admin Endpoints (Super Admin Only)
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| GET | `/api/admin/users` | List all users | 👑 Super Admin |
+| POST | `/api/admin/ban` | Ban user | 👑 Super Admin |
+| POST | `/api/admin/unban` | Unban user | 👑 Super Admin |
+| DELETE | `/api/admin/client` | Delete user | 👑 Super Admin |
+
+### 📦 Postman Collection
+
+Import the included `Nexora001_API.postman_collection.json` for ready-to-use API requests with:
+- Pre-configured authentication
+- Example payloads
+- Environment variables
+- Test scripts
 
 ---
 
 ## 📖 Usage
 
-### Basic Commands
+### Console Application
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -207,6 +300,53 @@ python run.py
 | `status` | System status | `status` |
 | `help` | Show help | `help` |
 | `exit` | Exit application | `exit` |
+
+### REST API Examples
+
+**Register and Login:**
+```bash
+# Register new user
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"SecurePass123!","name":"Test User"}'
+
+# Login to get JWT token
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"SecurePass123!"}'
+```
+
+**Crawl a Website:**
+```bash
+curl -X POST http://localhost:8000/api/ingest/url \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://docs.python.org/3/",
+    "max_depth": 1,
+    "follow_links": true,
+    "use_playwright": false
+  }'
+```
+
+**Ask a Question:**
+```bash
+curl -X POST http://localhost:8000/api/chat/ask \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is Python?",
+    "session_id": "my-session-123",
+    "top_k": 5
+  }'
+```
+
+**Upload a File:**
+```bash
+curl -X POST http://localhost:8000/api/ingest/file \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "file=@document.pdf"
+```
 
 ### Advanced Examples
 
@@ -316,16 +456,17 @@ nexora001> ask How do I contribute to it?  # Understands "it" = Python
 
 ```
 Nexora001/
-├── . env                    # Secret configuration (NEVER COMMIT)
-├── .env. example           # Example configuration
-├── . gitignore            # Git ignore rules
-├── README.md             # This file
-├── requirements. txt      # Python dependencies
-├── run.py                # Console application entry point
+├── .env                      # Secret configuration (NEVER COMMIT)
+├── .env.example              # Example configuration
+├── .gitignore                # Git ignore rules
+├── README.md                 # This file
+├── requirements.txt          # Python dependencies
+├── run.py                    # Console application entry point
+├── run_api.py                # REST API server entry point
+├── Nexora001_API.postman_collection.json  # Postman collection
 │
 ├── docs/
-│   ├── SRS.md           # Software Requirements Specification
-│   └── ARCHITECTURE.md  # Detailed architecture
+│   └── SRS.md                # Software Requirements Specification
 │
 ├── src/
 │   └── nexora001/
@@ -333,10 +474,23 @@ Nexora001/
 │       ├── main.py           # Console application
 │       ├── config.py         # Configuration management
 │       │
+│       ├── api/              # REST API (FastAPI)
+│       │   ├── __init__.py
+│       │   ├── app.py        # FastAPI application
+│       │   ├── dependencies.py  # Dependency injection
+│       │   ├── models.py     # Pydantic models
+│       │   ├── security.py   # JWT authentication
+│       │   └── routes/
+│       │       ├── auth.py   # Authentication endpoints
+│       │       ├── chat.py   # Chat/RAG endpoints
+│       │       ├── ingest.py # Ingestion endpoints
+│       │       ├── system.py # System/documents endpoints
+│       │       └── admin.py  # Admin endpoints
+│       │
 │       ├── crawler/
 │       │   ├── __init__.py
-│       │   ├── spider.py     # Scrapy spider
-│       │   ├── manager.py    # Crawler manager
+│       │   ├── spider.py     # Scrapy spider with Playwright
+│       │   ├── manager.py    # Crawler manager with crochet
 │       │   └── settings.py   # Scrapy settings
 │       │
 │       ├── processors/
@@ -348,19 +502,17 @@ Nexora001/
 │       │
 │       ├── storage/
 │       │   ├── __init__.py
-│       │   └── mongodb. py    # MongoDB operations
+│       │   └── mongodb.py    # MongoDB operations (multi-tenant)
 │       │
 │       └── rag/
 │           ├── __init__.py
 │           ├── retriever.py  # Document retrieval
-│           ├── generator.py  # Answer generation
+│           ├── generator.py  # Answer generation (Gemini)
 │           └── pipeline.py   # Complete RAG pipeline
 │
 └── tests/
     ├── __init__.py
-    ├── test_crawler.py
-    ├── test_processors.py
-    └── test_rag.py
+    └── test_config.py
 ```
 
 ---
@@ -410,24 +562,43 @@ python test_phase1_complete.py
 - [x] RAG question answering
 - [x] Console interface
 
-### 🚧 Phase 2: Backend API (In Progress)
-- [ ] FastAPI REST API
-- [ ] /api/chat endpoint
-- [ ] /api/ingest endpoint
-- [ ] Background job processing
-- [ ] Deployment to Heroku/Railway
+### ✅ Phase 2: Backend API (COMPLETED)
+- [x] FastAPI REST API with OpenAPI/Swagger
+- [x] JWT authentication & user management
+- [x] Multi-tenant architecture
+- [x] /api/auth endpoints (register, login, profile)
+- [x] /api/ingest endpoints (URL crawling, file upload)
+- [x] /api/chat endpoints (RAG Q&A, streaming)
+- [x] /api/documents endpoints (CRUD operations)
+- [x] /api/admin endpoints (super admin controls)
+- [x] Background job processing with crochet
+- [x] Postman collection
+- [x] Widget API key support
 
-### 📅 Phase 3: Chat Frontend (Planned)
+### 🚧 Phase 3: Deployment (In Progress)
+- [ ] Docker containerization
+- [ ] Docker Compose for local deployment
+- [ ] CI/CD pipeline (GitHub Actions)
+- [ ] Deploy to cloud (Railway/Render/Heroku)
+- [ ] Production environment configuration
+- [ ] Monitoring and logging
+
+### 📅 Phase 4: Chat Frontend (Planned)
 - [ ] React/Vue web application
 - [ ] Chat interface
-- [ ] Source display
+- [ ] Source display with citations
 - [ ] Responsive design
+- [ ] Real-time streaming responses
+- [ ] Session management
 
-### 📅 Phase 4: Admin Frontend (Planned)
+### 📅 Phase 5: Admin Dashboard (Planned)
+- [ ] Admin web interface
 - [ ] URL submission form
 - [ ] File upload interface
 - [ ] Job status dashboard
 - [ ] Content management
+- [ ] User management UI
+- [ ] Analytics and statistics
 
 ---
 

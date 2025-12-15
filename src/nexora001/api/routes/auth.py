@@ -10,6 +10,10 @@ from nexora001.storage.mongodb import MongoDBStorage
 router = APIRouter()
 
 # --- Models ---
+
+class PasswordChange(BaseModel):
+    new_password: str
+
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
@@ -113,3 +117,16 @@ async def generate_api_key(
     """Generate or retrieve the Widget API Key."""
     key = storage.get_or_create_api_key(current_user["_id"])
     return {"key": key}
+
+@router.put("/password")
+async def change_password(
+    data: PasswordChange,
+    storage: MongoDBStorage = Depends(get_storage),
+    current_user: dict = Depends(get_current_user)
+):
+    """Allow logged-in user to change their password."""
+    new_hash = get_password_hash(data.new_password)
+    success = storage.update_password(current_user["_id"], new_hash)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update password")
+    return {"message": "Password updated successfully"}

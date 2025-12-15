@@ -3,10 +3,22 @@ from typing import List
 from nexora001.api.dependencies import get_current_active_superuser, get_storage
 from nexora001.storage.mongodb import MongoDBStorage
 from pydantic import BaseModel
+import secrets
+from nexora001.api.security import get_password_hash
 
 router = APIRouter()
 
 # --- Admin Models ---
+
+class AdminCreateUser(BaseModel):
+    email: str
+    name: str
+
+class AdminNotification(BaseModel):
+    email: str # Send to specific user by email
+    message: str
+    type: str = "info"
+
 class AdminUserList(BaseModel):
     id: str
     email: str
@@ -76,3 +88,41 @@ async def delete_client(
     if count > 0:
         return {"message": f"Permanently deleted user and {count} related records"}
     raise HTTPException(status_code=404, detail="User not found")
+
+@router.post("/client", response_model=dict)
+async def create_client_manually(
+    user_in: AdminCreateUser,
+    storage: MongoDBStorage = Depends(get_storage),
+    admin: dict = Depends(get_current_active_superuser)
+):
+    """Super Admin: Create a client manually and generate a temp password."""
+    if storage.users.find_one({"email": user_in.email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Generate random 12-char password
+    temp_password = secrets.token_urlsafe(12)
+    hashed_pw = get_password_hash(temp_password) # Make sure get_password_hash is imported from security
+    
+    user_id = storage.create_user(user_in.email, hashed_pw, user_in.name)
+    
+    # Return the password so Admin can copy it
+    return {
+        "message": "User created",
+        "user_id": user_id,
+        "email": user_in.email,
+        "temporary_password": temp_password 
+    }
+
+@router.post("/notify")
+async def send_notification(
+    note: AdminNotification,
+    storage: MongoDBStorage = Depends(get_storage),
+    admin: dict = Depends(get_current_active_superuser)
+):
+    """Super Admin: Send an internal message to a client."""
+    target_user = storage.users.find_one({"email": note.email})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    storage.create_notification(str(target_user["_id"]), note.message, note.type)
+    return {"message": "Notification sent"}

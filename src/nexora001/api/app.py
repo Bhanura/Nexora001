@@ -10,7 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from nexora001.api.routes import chat, ingest, system, auth, admin  # <--- Add admin
+from nexora001.api.routes import chat, ingest, system, auth, admin, notification
+
 
 # ============================================================================
 # CREATE FASTAPI APP
@@ -69,6 +70,12 @@ app.include_router(
     admin.router,
     prefix="/api/admin",
     tags=["Super Admin"]  # <--- Add admin router
+)
+
+app.include_router(
+    notification.router, 
+    prefix="/api/notifications", 
+    tags=["Notifications"]
 )
 
 # ============================================================================

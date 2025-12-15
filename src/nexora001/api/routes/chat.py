@@ -7,16 +7,11 @@ from typing import List
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent. parent.parent. parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from nexora001. api.models import (
-    ChatRequest,
-    ChatResponse,
-    Source,
-    ErrorResponse
-)
-from nexora001.api.dependencies import get_rag_pipeline
-from nexora001. rag.pipeline import RAGPipeline
+from nexora001.api.models import ChatRequest, ChatResponse, Source, ErrorResponse
+from nexora001.api.dependencies import get_rag_pipeline, get_current_user
+from nexora001.rag.pipeline import RAGPipeline
 
 router = APIRouter()
 
@@ -34,21 +29,27 @@ router = APIRouter()
 )
 async def chat(
     request: ChatRequest,
-    rag: RAGPipeline = Depends(get_rag_pipeline)
+    rag: RAGPipeline = Depends(get_rag_pipeline),
+    current_user: dict = Depends(get_current_user)  # <--- Must be logged in
 ):
     """
     Ask a question to the AI chatbot.
     
     The system will:
     1. Search for relevant documents in the knowledge base
-    2.  Retrieve the most similar content
+    2. Retrieve the most similar content
     3. Generate an answer using Google Gemini AI
     4. Return the answer with source citations
     """
     try:
-        # Ask the RAG system
+        # Create a session ID linked to the admin
+        session_id = request.session_id or f"admin-test-{current_user['_id']}"
+        
+        # Ask the RAG system with client_id for data isolation
         result = rag.ask(
             query=request.message,
+            client_id=current_user["_id"],  # <--- Data Isolation
+            session_id=session_id,
             use_history=request.use_history
         )
         
@@ -59,7 +60,7 @@ async def chat(
                 title=src['title'],
                 url=src['url'],
                 score=src['score'],
-                chunk_index=src. get('chunk_index')
+                chunk_index=src.get('chunk_index')
             )
             for src in result['sources']
         ]
@@ -68,7 +69,7 @@ async def chat(
             answer=result['answer'],
             sources=sources,
             found_documents=result['found_documents'],
-            session_id=request.session_id
+            session_id=session_id  # <--- Use the generated session_id
         )
         
     except Exception as e:
@@ -92,7 +93,13 @@ async def clear_history(rag: RAGPipeline = Depends(get_rag_pipeline)):
         rag.clear_history()
         return {"success": True, "message": "Conversation history cleared"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "InternalError",
+                "message": str(e)
+            }
+        )
 
 
 @router.get(
@@ -106,4 +113,10 @@ async def get_history(rag: RAGPipeline = Depends(get_rag_pipeline)):
         history = rag.get_history()
         return {"messages": history, "count": len(history)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "InternalError",
+                "message": str(e)
+            }
+        )

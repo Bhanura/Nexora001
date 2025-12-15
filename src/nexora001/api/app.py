@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent. parent))
 
-from nexora001. api.routes import chat, ingest, system
+from nexora001. api.routes import chat, ingest, system, auth
 
 # ============================================================================
 # CREATE FASTAPI APP
@@ -29,7 +29,7 @@ app = FastAPI(
 # CORS MIDDLEWARE
 # ============================================================================
 
-app. add_middleware(
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, specify your frontend URL
     allow_credentials=True,
@@ -40,6 +40,12 @@ app. add_middleware(
 # ============================================================================
 # INCLUDE ROUTERS
 # ============================================================================
+
+app.include_router(
+    auth.router,
+    prefix="/api/auth",
+    tags=["Authentication"]
+)
 
 app.include_router(
     chat.router,

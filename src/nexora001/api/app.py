@@ -8,9 +8,9 @@ from fastapi.responses import JSONResponse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent. parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from nexora001. api.routes import chat, ingest, system
+from nexora001.api.routes import chat, ingest, system, auth, admin  # <--- Add admin
 
 # ============================================================================
 # CREATE FASTAPI APP
@@ -29,7 +29,7 @@ app = FastAPI(
 # CORS MIDDLEWARE
 # ============================================================================
 
-app. add_middleware(
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, specify your frontend URL
     allow_credentials=True,
@@ -40,6 +40,12 @@ app. add_middleware(
 # ============================================================================
 # INCLUDE ROUTERS
 # ============================================================================
+
+app.include_router(
+    auth.router,
+    prefix="/api/auth",
+    tags=["Authentication"]
+)
 
 app.include_router(
     chat.router,
@@ -59,6 +65,12 @@ app.include_router(
     tags=["System"]
 )
 
+app.include_router(
+    admin.router,
+    prefix="/api/admin",
+    tags=["Super Admin"]  # <--- Add admin router
+)
+
 # ============================================================================
 # ROOT ENDPOINT
 # ============================================================================
@@ -72,11 +84,13 @@ def root():
         "description": "AI-Powered Knowledge Base with RAG",
         "docs": "/docs",
         "endpoints": {
+            "auth": "/api/auth",
             "chat": "/api/chat",
             "ingest_url": "/api/ingest/url",
             "ingest_file": "/api/ingest/file",
             "status": "/api/status",
-            "documents": "/api/documents"
+            "documents": "/api/documents",
+            "admin": "/api/admin"  # <--- Added admin endpoint
         }
     }
 

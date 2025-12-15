@@ -185,16 +185,17 @@ class PDFProcessor:
         }
 
 
-def process_pdf(pdf_path: str, source_url: Optional[str] = None) -> Dict:
+def process_pdf(pdf_path: str, source_url: Optional[str] = None, client_id: Optional[str] = None) -> Dict:
     """
     Convenience function to process a PDF file. 
     
     Args:
         pdf_path: Path to PDF file
         source_url: Optional URL/identifier
+        client_id: Client ID for multi-tenant support
         
     Returns:
         Processing statistics
     """
     processor = PDFProcessor()
-    return processor.process_and_store(pdf_path, source_url)
+    return processor.process_and_store(pdf_path, client_id, source_url)

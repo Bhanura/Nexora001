@@ -55,7 +55,9 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {
 }
 
 # Twisted reactor
-TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+# NOTE: When running with crochet (API mode), don't set TWISTED_REACTOR
+# Crochet manages the reactor automatically. Only set this for standalone crawling.
+# TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 # Set settings whose default value is deprecated
 REQUEST_FINGERPRINTER_IMPLEMENTATION = '2.7'

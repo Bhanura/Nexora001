@@ -85,12 +85,13 @@ class PDFProcessor:
         except Exception as e:
             raise Exception(f"Failed to extract text from PDF: {e}")
     
-    def process_and_store(self, pdf_path: str, source_url: Optional[str] = None) -> Dict:
+    def process_and_store(self, pdf_path: str, client_id: str, source_url: Optional[str] = None) -> Dict:
         """
         Process PDF and store in database.
         
         Args:
             pdf_path: Path to PDF file
+            client_id: Client ID for multi-tenant data isolation
             source_url: Optional URL/identifier for the document
             
         Returns:
@@ -136,6 +137,7 @@ class PDFProcessor:
                     # Store in MongoDB
                     if embedding:
                         storage.store_document_with_embedding(
+                            client_id=client_id,
                             content=chunk_text,
                             embedding=embedding,
                             source_url=source_url,
@@ -152,6 +154,7 @@ class PDFProcessor:
                         )
                     else:
                         storage.store_document(
+                            client_id=client_id,
                             content=chunk_text,
                             source_url=source_url,
                             source_type="pdf",

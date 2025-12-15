@@ -39,6 +39,8 @@ class Nexora001Spider(scrapy.Spider):
     
     def __init__(
         self,
+        client_id: str = None,
+        job_id: str = None,
         start_url: str = None,
         max_depth: int = 2,
         follow_links: bool = True,
@@ -102,6 +104,11 @@ class Nexora001Spider(scrapy.Spider):
         self.logger.info(f"  Embeddings: {self.enable_embeddings}")
         self.logger.info(f"  Chunk size: {self.chunk_size}")
         self.logger.info(f"  Playwright: {self.use_playwright}")
+
+        if not client_id:
+            raise ValueError("client_id is required for multi-tenant crawling")
+        self.client_id = client_id
+        self.job_id = job_id
     
     def start_requests(self):
         """Generate initial requests with Playwright if enabled."""
@@ -152,7 +159,7 @@ class Nexora001Spider(scrapy.Spider):
             await page.close()
         
         # Check if already crawled
-        if self.storage.url_exists(response.url):
+        if self.storage.url_exists(self.client_id, response.url):
             self.logger.info(f"  Skipping (already crawled): {response.url}")
             return
         
@@ -199,6 +206,7 @@ class Nexora001Spider(scrapy.Spider):
                 # Store in MongoDB
                 if embedding:
                     doc_id = self.storage.store_document_with_embedding(
+                        client_id=self.client_id,
                         content=chunk_text,
                         embedding=embedding,
                         source_url=response.url,
@@ -214,6 +222,7 @@ class Nexora001Spider(scrapy.Spider):
                     )
                 else:
                     doc_id = self.storage.store_document(
+                        client_id=self.client_id,
                         content=chunk_text,
                         source_url=response.url,
                         source_type="web",
@@ -357,4 +366,13 @@ class Nexora001Spider(scrapy.Spider):
         self.logger.info(f"Documents stored: {self.documents_created}")
         self.logger.info(f"{'='*60}\n")
         
+        if self.job_id:
+            status = "completed" if reason == "finished" else "failed"
+            self.storage.update_crawl_job(
+                job_id=self.job_id,
+                status=status,
+                pages_crawled=self.pages_crawled,
+                documents_created=self.documents_created
+            )
+
         self.storage.close()

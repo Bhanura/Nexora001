@@ -20,6 +20,8 @@ from nexora001.config import settings, print_config_status
 from nexora001.storage.mongodb import get_storage
 from nexora001.crawler.manager import crawl_website
 from nexora001.rag.pipeline import create_rag_pipeline
+from nexora001.processors.pdf_processor import PDFProcessor
+from nexora001.processors.docx_processor import DOCXProcessor
 
 console = Console()
 
@@ -212,6 +214,73 @@ def handle_crawl(args: str):
         console.print("[green]✅ Crawl complete and data isolated.[/green]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
+    return True
+
+def handle_upload(args: str):
+    """Handle document upload (PDF/DOCX)."""
+    if not CURRENT_USER:
+        console.print("[red]Please login first.[/red]")
+        return True
+
+    if not args:
+        console.print("[yellow]Usage: upload <file_path>[/yellow]")
+        return True
+
+    file_path = args.strip()
+    
+    # Check if file exists
+    if not Path(file_path).exists():
+        console.print(f"[red]File not found: {file_path}[/red]")
+        return True
+    
+    # Get file extension
+    file_ext = Path(file_path).suffix.lower()
+    
+    if file_ext not in ['.pdf', '.docx']:
+        console.print(f"[red]Unsupported file type: {file_ext}[/red]")
+        console.print("[yellow]Supported formats: .pdf, .docx[/yellow]")
+        return True
+    
+    console.print(f"\n[cyan]📄 Processing {Path(file_path).name}...[/cyan]")
+    
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            console=console
+        ) as progress:
+            task = progress.add_task("Uploading and processing document...", total=None)
+            
+            # Process based on file type
+            if file_ext == '.pdf':
+                processor = PDFProcessor(generate_embeddings=True)
+                result = processor.process_and_store(
+                    pdf_path=file_path,
+                    client_id=str(CURRENT_USER['_id']),
+                    source_url=f"file://{Path(file_path).absolute()}"
+                )
+            else:  # .docx
+                processor = DOCXProcessor(generate_embeddings=True)
+                result = processor.process_and_store(
+                    docx_path=file_path,
+                    client_id=str(CURRENT_USER['_id']),
+                    source_url=f"file://{Path(file_path).absolute()}"
+                )
+            
+            progress.update(task, completed=True)
+        
+        if result.get('success'):
+            console.print(f"\n[green]✅ Document processed successfully![/green]")
+            console.print(f"[cyan]File: {result.get('filename', 'Unknown')}[/cyan]")
+            console.print(f"[cyan]Title: {result.get('title', 'Unknown')}[/cyan]")
+            console.print(f"[cyan]Chunks created: {result.get('chunks_created', 0)}[/cyan]")
+        else:
+            console.print(f"\n[red]❌ Failed to process document[/red]")
+            console.print(f"[red]Error: {result.get('error', 'Unknown error')}[/red]")
+            
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+    
     return True
 
 def handle_ask(args: str):
@@ -453,6 +522,7 @@ def print_help():
 | Command | Description |
 |---------|-------------|
 | `crawl <url>` | Crawl website (Saved to YOUR account) |
+| `upload <file>` | Upload PDF or DOCX document |
 | `ask <msg>` | Ask question (Searches YOUR data only) |
 | `list` | List your documents |
 | `widget` | Simulate end-user widget chat |
@@ -501,6 +571,7 @@ def handle_command(command: str) -> bool:
     
     # Core Commands
     elif cmd == "crawl": handle_crawl(args)
+    elif cmd == "upload": handle_upload(args)
     elif cmd == "ask": handle_ask(args)
     elif cmd == "list": handle_list()
     elif cmd == "widget": handle_simulate_widget()

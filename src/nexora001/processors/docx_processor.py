@@ -91,12 +91,13 @@ class DOCXProcessor:
         except Exception as e:
             raise Exception(f"Failed to extract text from DOCX: {e}")
     
-    def process_and_store(self, docx_path: str, source_url: Optional[str] = None) -> Dict:
+    def process_and_store(self, docx_path: str, client_id: str, source_url: Optional[str] = None) -> Dict:
         """
         Process DOCX and store in database. 
         
         Args:
             docx_path: Path to DOCX file
+            client_id: Client ID for multi-tenant data isolation
             source_url: Optional URL/identifier for the document
             
         Returns:
@@ -142,6 +143,7 @@ class DOCXProcessor:
                     # Store in MongoDB
                     if embedding:
                         storage.store_document_with_embedding(
+                            client_id=client_id,
                             content=chunk_text,
                             embedding=embedding,
                             source_url=source_url,
@@ -159,6 +161,7 @@ class DOCXProcessor:
                         )
                     else:
                         storage.store_document(
+                            client_id=client_id,
                             content=chunk_text,
                             source_url=source_url,
                             source_type="docx",

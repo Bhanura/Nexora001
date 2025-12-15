@@ -37,10 +37,21 @@ def background_crawl_task(
     use_playwright: bool
 ):
     """Background task for crawling."""
+    import logging
+    import traceback
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"🚀 Starting background crawl task for job {job_id}")
+    logger.info(f"   URL: {url}")
+    logger.info(f"   Client ID: {client_id}")
+    logger.info(f"   Max depth: {max_depth}")
+    logger.info(f"   Playwright: {use_playwright}")
+    
     try:
         crawl_jobs[job_id] = {"status": "running", "url": url}
         
         # Perform crawl with client_id
+        logger.info(f"⏳ Calling crawl_website()...")
         result = crawl_website(
             url=url,
             client_id=client_id,  # <--- Passing the ID
@@ -49,6 +60,9 @@ def background_crawl_task(
             use_playwright=use_playwright
         )
         
+        logger.info(f"✅ Crawl completed successfully for job {job_id}")
+        logger.info(f"   Result: {result}")
+        
         crawl_jobs[job_id] = {
             "status": "completed",
             "url": url,
@@ -56,10 +70,15 @@ def background_crawl_task(
         }
         
     except Exception as e:
+        logger.error(f"❌ Crawl failed for job {job_id}")
+        logger.error(f"   Error: {str(e)}")
+        logger.error(f"   Traceback:\n{traceback.format_exc()}")
+        
         crawl_jobs[job_id] = {
             "status": "failed",
             "url": url,
-            "error": str(e)
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }
 
 

@@ -112,9 +112,16 @@ class Nexora001Spider(scrapy.Spider):
     
     def start_requests(self):
         """Generate initial requests with Playwright if enabled."""
+        self.logger.info(f"🌐 start_requests() called - generating requests...")
+        self.logger.info(f"   Start URLs: {self.start_urls}")
+        self.logger.info(f"   Use Playwright: {self.use_playwright}")
+        
         for url in self.start_urls:
+            self.logger.info(f"   Generating request for: {url}")
+            
             if self.use_playwright:
                 # Use Playwright for JavaScript rendering
+                self.logger.info(f"   → Using Playwright for {url}")
                 yield scrapy.Request(
                     url,
                     callback=self.parse,
@@ -131,16 +138,24 @@ class Nexora001Spider(scrapy.Spider):
                 )
             else:
                 # Regular request
+                self.logger.info(f"   → Using regular Scrapy for {url}")
                 yield scrapy.Request(
                     url,
                     callback=self.parse,
                     cb_kwargs={'depth': 0}
                 )
+        
+        self.logger.info(f"✓ start_requests() completed - all requests generated")
     
     async def errback_close_page(self, failure):
         """Handle Playwright errors."""
+        self.logger.error(f"❌ Playwright error for {failure.request.url}")
+        self.logger.error(f"   Error: {failure.value}")
+        self.logger.error(f"   Type: {failure.type}")
+        
         page = failure.request.meta.get("playwright_page")
         if page:
+            self.logger.info(f"   Closing Playwright page...")
             await page.close()
     
     async def parse(self, response: Response, depth: int = 0) -> Generator:

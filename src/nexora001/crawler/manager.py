@@ -83,6 +83,8 @@ class CrawlerManager:
         self._configure_logging()
         
         # Create crawler settings
+        # NOTE: Set TWISTED_REACTOR to None to disable reactor verification
+        # since crochet has already installed its own reactor
         settings = {
             'ROBOTSTXT_OBEY': crawler_settings. ROBOTSTXT_OBEY,
             'CONCURRENT_REQUESTS': crawler_settings.CONCURRENT_REQUESTS,
@@ -93,7 +95,7 @@ class CrawlerManager:
             'HTTPCACHE_ENABLED': crawler_settings. HTTPCACHE_ENABLED,
             'HTTPCACHE_DIR': crawler_settings.HTTPCACHE_DIR,
             'LOG_LEVEL': 'INFO',
-            'TWISTED_REACTOR': 'twisted.internet.asyncioreactor.AsyncioSelectorReactor'
+            'TWISTED_REACTOR': None  # Disable reactor verification - crochet manages it
         }
         
         # Add Playwright settings if enabled
@@ -101,7 +103,7 @@ class CrawlerManager:
             settings['DOWNLOAD_HANDLERS'] = crawler_settings.DOWNLOAD_HANDLERS
             settings['PLAYWRIGHT_BROWSER_TYPE'] = crawler_settings.PLAYWRIGHT_BROWSER_TYPE
             settings['PLAYWRIGHT_LAUNCH_OPTIONS'] = crawler_settings.PLAYWRIGHT_LAUNCH_OPTIONS
-            settings['TWISTED_REACTOR'] = crawler_settings.TWISTED_REACTOR
+            # Still keep TWISTED_REACTOR as None even with Playwright
         
         # Create process
         # self.process = CrawlerProcess(settings)
@@ -109,6 +111,10 @@ class CrawlerManager:
         self.runner = CrawlerRunner(settings)
         
         # Run spider with crochet
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"📡 About to call _run_spider()...")
+        
         self._run_spider(
             url=url,
             client_id=client_id,
@@ -117,6 +123,8 @@ class CrawlerManager:
             follow_links=follow_links,
             use_playwright=use_playwright
         )
+        
+        logger.info(f"✓ _run_spider() returned, crawl should be running in background...")
 
         # Add spider
         """
@@ -145,15 +153,30 @@ class CrawlerManager:
     @wait_for(timeout=3600)
     def _run_spider(self, url, client_id, job_id, max_depth, follow_links, use_playwright):
         """Run spider using crochet."""
-        return self.runner.crawl(
-            Nexora001Spider,
-            start_url=url,
-            client_id=client_id,
-            job_id=job_id,
-            max_depth=max_depth,
-            follow_links=follow_links,
-            use_playwright=use_playwright
-        )
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"🕷️ Starting spider with crochet...")
+        logger.info(f"   URL: {url}")
+        logger.info(f"   Job ID: {job_id}")
+        
+        try:
+            deferred = self.runner.crawl(
+                Nexora001Spider,
+                start_url=url,
+                client_id=client_id,
+                job_id=job_id,
+                max_depth=max_depth,
+                follow_links=follow_links,
+                use_playwright=use_playwright
+            )
+            logger.info(f"✓ Spider crawl initiated, returning deferred...")
+            return deferred
+        except Exception as e:
+            logger.error(f"❌ Error in _run_spider: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
 def crawl_website(
     url: str,

@@ -191,16 +191,17 @@ class DOCXProcessor:
         }
 
 
-def process_docx(docx_path: str, source_url: Optional[str] = None) -> Dict:
+def process_docx(docx_path: str, source_url: Optional[str] = None, client_id: Optional[str] = None) -> Dict:
     """
     Convenience function to process a DOCX file.
     
     Args:
         docx_path: Path to DOCX file
         source_url: Optional URL/identifier
+        client_id: Client ID for multi-tenant support
         
     Returns:
         Processing statistics
     """
     processor = DOCXProcessor()
-    return processor.process_and_store(docx_path, source_url)
+    return processor.process_and_store(docx_path, client_id, source_url)

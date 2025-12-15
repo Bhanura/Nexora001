@@ -370,6 +370,69 @@ class MongoDBStorage:
                 return None
             return doc['client_id']
         return None
+    
+    def get_stats(self, client_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get statistics about documents in the database."""
+        try:
+            # Build filter
+            filter_query = {}
+            if client_id:
+                filter_query["client_id"] = client_id
+            
+            # Total documents
+            total_documents = self.documents.count_documents(filter_query)
+            
+            # Get unique sources
+            sources_pipeline = [
+                {"$match": filter_query} if filter_query else {"$match": {}},
+                {"$group": {"_id": "$metadata.source_url"}},
+                {"$count": "total"}
+            ]
+            sources_result = list(self.documents.aggregate(sources_pipeline))
+            unique_sources = sources_result[0]["total"] if sources_result else 0
+            
+            # Calculate average chunk size
+            avg_pipeline = [
+                {"$match": filter_query} if filter_query else {"$match": {}},
+                {"$group": {"_id": None, "avg_size": {"$avg": {"$strLenCP": "$content"}}}}
+            ]
+            avg_result = list(self.documents.aggregate(avg_pipeline))
+            avg_chunk_size = int(avg_result[0]["avg_size"]) if avg_result else 0
+            
+            # Get list of sources
+            sources_list_pipeline = [
+                {"$match": filter_query} if filter_query else {"$match": {}},
+                {"$group": {
+                    "_id": "$metadata.source_url",
+                    "count": {"$sum": 1},
+                    "type": {"$first": "$metadata.source_type"}
+                }},
+                {"$limit": 100}  # Limit to avoid huge result sets
+            ]
+            sources_data = list(self.documents.aggregate(sources_list_pipeline))
+            sources = [
+                {
+                    "url": item["_id"],
+                    "count": item["count"],
+                    "type": item.get("type", "unknown")
+                }
+                for item in sources_data
+            ]
+            
+            return {
+                "total_documents": total_documents,
+                "unique_sources": unique_sources,
+                "avg_chunk_size": avg_chunk_size,
+                "sources": sources
+            }
+        except Exception as e:
+            # Return empty stats on error
+            return {
+                "total_documents": 0,
+                "unique_sources": 0,
+                "avg_chunk_size": 0,
+                "sources": []
+            }
 
 def get_storage():
     return MongoDBStorage()

@@ -433,6 +433,41 @@ class MongoDBStorage:
                 "avg_chunk_size": 0,
                 "sources": []
             }
+            
+# --- NOTIFICATIONS SYSTEM ---
+    def create_notification(self, user_id: str, message: str, type: str = "info") -> bool:
+        """Create a notification for a specific user."""
+        self.db["notifications"].insert_one({
+            "user_id": user_id,
+            "message": message,
+            "type": type, # 'info', 'warning', 'promo'
+            "read": False,
+            "created_at": datetime.utcnow()
+        })
+        return True
+
+    def get_user_notifications(self, user_id: str, limit: int = 10) -> List[Dict]:
+        """Get unread or recent notifications."""
+        return list(self.db["notifications"].find(
+            {"user_id": user_id}
+        ).sort("created_at", -1).limit(limit))
+
+    def mark_notification_read(self, notification_id: str, user_id: str) -> bool:
+        """Mark as read."""
+        res = self.db["notifications"].update_one(
+            {"_id": ObjectId(notification_id), "user_id": user_id},
+            {"$set": {"read": True}}
+        )
+        return res.modified_count > 0
+    
+    # --- UPDATED AUTH ---
+    def update_password(self, user_id: str, new_hash: str) -> bool:
+        """Update user password."""
+        res = self.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"password_hash": new_hash}}
+        )
+        return res.modified_count > 0    
 
 def get_storage():
     return MongoDBStorage()

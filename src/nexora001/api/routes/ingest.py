@@ -166,6 +166,33 @@ async def get_crawl_status(job_id: str):
     
     return crawl_jobs[job_id]
 
+@router.get(
+    "/jobs",
+    summary="Get user's crawl jobs",
+    description="Retrieve crawl job history for the logged-in user"
+)
+async def get_user_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    storage: MongoDBStorage = Depends(get_storage),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get crawl jobs for the current user."""
+    try:
+        client_id = current_user["_id"]
+        jobs = storage.get_user_crawl_jobs(client_id, limit, skip)
+        total = storage.crawl_jobs.count_documents({"client_id": client_id})
+        
+        return {
+            "jobs": jobs,
+            "total": total
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "InternalError", "message": str(e)}
+        )
+
 
 # ============================================================================
 # FILE UPLOAD ENDPOINTS

@@ -107,6 +107,26 @@ class IngestResponse(BaseModel):
     total_characters: int
     message: str
 
+class CrawlJobInfo(BaseModel):
+    """Crawl job information model."""
+    id: str = Field(..., alias="_id")
+    url: str
+    status: str  # running, completed, failed
+    pages_crawled: int
+    documents_created: int
+    started_at: str
+    completed_at: Optional[str] = None
+    error_message: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+    
+    class Config:
+        populate_by_name = True
+
+class CrawlJobListResponse(BaseModel):
+    """Response for crawl job listing."""
+    jobs: List[CrawlJobInfo]
+    total: int
+
 
 # ============================================================================
 # SYSTEM MODELS

@@ -327,7 +327,26 @@ class MongoDBStorage:
                 {"_id": ObjectId(job_id)}, 
                 {"$set": updates}
             )
-            
+
+    def get_user_crawl_jobs(self, client_id: str, limit: int = 20, skip: int = 0) -> List[Dict]:
+        """Get recent crawl jobs for a specific user."""
+        jobs = list(
+            self.crawl_jobs.find({"client_id": client_id})
+            .sort("started_at", -1)  # Most recent first
+            .skip(skip)
+            .limit(limit)
+        )
+        
+        # Convert ObjectId to string
+        for job in jobs:
+            job["_id"] = str(job["_id"])
+            if job.get("started_at"):
+                job["started_at"] = job["started_at"].isoformat()
+            if job.get("completed_at"):
+                job["completed_at"] = job["completed_at"].isoformat()
+        
+        return jobs
+
     # ==========================================
     # 7. SUPER ADMIN METHODS
     # ==========================================

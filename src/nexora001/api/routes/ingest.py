@@ -2,7 +2,7 @@
 Ingestion endpoints for crawling URLs and uploading files. 
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks, Depends, Query
 import uuid
 import shutil
 import tempfile

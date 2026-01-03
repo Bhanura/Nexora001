@@ -16,7 +16,8 @@ from nexora001.api.models import CrawlRequest, CrawlResponse, IngestResponse, Er
 from nexora001.crawler.manager import crawl_website
 from nexora001.processors.pdf_processor import process_pdf
 from nexora001.processors.docx_processor import process_docx
-from nexora001.api.dependencies import get_current_user  # <--- DEPENDENCY IMPORT
+from nexora001.api.dependencies import get_current_user, get_storage  # <--- DEPENDENCY IMPORT
+from nexora001.storage.mongodb import MongoDBStorage
 
 router = APIRouter()
 

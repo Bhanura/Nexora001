@@ -202,26 +202,37 @@ class MongoDBStorage:
         return str(self.documents.insert_one(doc).inserted_id)
 
     # --- UPDATED SEARCH METHODS ---
-    def vector_search(self, client_id: str, query_embedding: List[float], limit: int = 5, min_score: float = 0.0) -> List[Dict]:
-        # 1. Fetch only documents belonging to this client
-        # In production, use Atlas Search pipeline: {"$search": { ..., "filter": {"client_id": client_id} }}
-        # For now (simple python implementation):
-        
-        candidates = list(self.documents.find(
-            {"client_id": client_id, "embedding": {"$exists": True}}, 
-            {"content": 1, "embedding": 1, "metadata": 1}
-        ))
-        
-        results = []
-        for doc in candidates:
-            score = self._cosine_similarity(query_embedding, doc['embedding'])
-            if score >= min_score:
-                doc['similarity_score'] = score
-                del doc['embedding'] # Save bandwidth
-                results.append(doc)
-        
-        results.sort(key=lambda x: x['similarity_score'], reverse=True)
-        return results[:limit]
+    def vector_search(self, client_id: str, query_embedding: List[float],
+                    limit: int = 5, min_score: float = 0.0) -> List[Dict]:
+        """Vector search using MongoDB Atlas Search index."""
+
+        pipeline = [
+            {
+                "$vectorSearch": {
+                    "index": "vector_index",  # Create this index first
+                    "path": "embedding",
+                    "queryVector": query_embedding,
+                    "numCandidates": 100,
+                    "limit": limit,
+                    "filter": {"client_id": client_id}  # Multi-tenant filtering
+                }
+            },
+            {
+                "$match": {
+                    "$expr": {"$gte": [{"$meta": "vectorSearchScore"}, min_score]}
+                }
+            },
+            {
+                "$project": {
+                    "content": 1,
+                    "metadata": 1,
+                    "similarity_score": {"$meta": "vectorSearchScore"}
+                }
+            }
+        ]
+
+        return list(self.documents.aggregate(pipeline))
+
     
     def close(self):
         self.client.close()

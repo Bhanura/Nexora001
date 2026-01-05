@@ -204,34 +204,70 @@ class MongoDBStorage:
     # --- UPDATED SEARCH METHODS ---
     def vector_search(self, client_id: str, query_embedding: List[float],
                     limit: int = 5, min_score: float = 0.0) -> List[Dict]:
-        """Vector search using MongoDB Atlas Search index."""
-
-        pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": "vector_index",  # Create this index first
-                    "path": "embedding",
-                    "queryVector": query_embedding,
-                    "numCandidates": 100,
-                    "limit": limit,
-                    "filter": {"client_id": client_id}  # Multi-tenant filtering
+        """
+        Optimized vector search using MongoDB Atlas Search.
+        Falls back to Python if Atlas Search fails.
+        """
+        import time
+        
+        try:
+            # Try MongoDB Atlas Vector Search first (FAST - 0.1-0.3s)
+            start = time.time()
+            
+            pipeline = [
+                {
+                    "$vectorSearch": {
+                        "index": "vector_index",
+                        "path": "embedding",
+                        "queryVector": query_embedding,
+                        "numCandidates": min(limit * 20, 200),
+                        "limit": limit,
+                        "filter": {"client_id": client_id}
+                    }
+                },
+                {
+                    "$match": {
+                        "$expr": {"$gte": [{"$meta": "vectorSearchScore"}, min_score]}
+                    }
+                },
+                {
+                    "$project": {
+                        "content": 1,
+                        "metadata": 1,
+                        "similarity_score": {"$meta": "vectorSearchScore"},
+                        "_id": 1
+                    }
                 }
-            },
-            {
-                "$match": {
-                    "$expr": {"$gte": [{"$meta": "vectorSearchScore"}, min_score]}
-                }
-            },
-            {
-                "$project": {
-                    "content": 1,
-                    "metadata": 1,
-                    "similarity_score": {"$meta": "vectorSearchScore"}
-                }
-            }
-        ]
-
-        return list(self.documents.aggregate(pipeline))
+            ]
+            
+            results = list(self.documents.aggregate(pipeline))
+            elapsed = time.time() - start
+            print(f"✅ Atlas Vector Search: {len(results)} results in {elapsed:.3f}s")
+            return results
+            
+        except Exception as e:
+            # Fallback to Python implementation (SLOW - 8-12s)
+            print(f"⚠️  Atlas Vector Search unavailable: {str(e)[:100]}")
+            print(f"   Falling back to Python search (slower)")
+            
+            start = time.time()
+            candidates = list(self.documents.find(
+                {"client_id": client_id, "embedding": {"$exists": True}}, 
+                {"content": 1, "embedding": 1, "metadata": 1}
+            ))
+            
+            results = []
+            for doc in candidates:
+                score = self._cosine_similarity(query_embedding, doc['embedding'])
+                if score >= min_score:
+                    doc['similarity_score'] = score
+                    del doc['embedding']
+                    results.append(doc)
+            
+            results.sort(key=lambda x: x['similarity_score'], reverse=True)
+            elapsed = time.time() - start
+            print(f"⚠️  Python Search: {len(results[:limit])} results in {elapsed:.3f}s")
+            return results[:limit]
 
     
     def close(self):

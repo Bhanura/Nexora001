@@ -3,10 +3,12 @@ Embedding generation for Nexora001.
 Supports both local (sentence-transformers) and API-based embeddings.
 """
 
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 import os
 import numpy as np
 from enum import Enum
+import hashlib
+import time
 
 
 class EmbeddingProvider(Enum):
@@ -41,6 +43,9 @@ class EmbeddingGenerator:
         self.provider = provider
         self.model = None
         self.dimension = None
+        self.cache: Dict[str, List[float]] = {}  # In-memory cache
+        self.cache_hits = 0
+        self.cache_misses = 0
         
         if provider == EmbeddingProvider.SENTENCE_TRANSFORMERS:
             self._init_sentence_transformers(model_name)
@@ -53,12 +58,21 @@ class EmbeddingGenerator:
         """Initialize sentence-transformers (local embeddings)."""
         try:
             from sentence_transformers import SentenceTransformer
+            import torch
             
             # Use a good general-purpose model
             model_name = model_name or 'all-MiniLM-L6-v2'
             
-            print(f"Loading sentence-transformers model: {model_name}")
-            self.model = SentenceTransformer(model_name)
+            # Auto-detect best device
+            if torch.cuda.is_available():
+                device = 'cuda'
+                print(f"🚀 GPU detected: {torch.cuda.get_device_name(0)}")
+            else:
+                device = 'cpu'
+                print("💻 Using CPU (no GPU detected)")
+            
+            print(f"Loading sentence-transformers model: {model_name} on {device}")
+            self.model = SentenceTransformer(model_name, device=device)
             self.dimension = self.model.get_sentence_embedding_dimension()
             print(f"✓ Model loaded (dimension: {self.dimension})")
             
@@ -113,7 +127,7 @@ class EmbeddingGenerator:
     
     def generate_embedding(self, text: str) -> List[float]:
         """
-        Generate embedding for a single text. 
+        Generate embedding for a single text with caching.
         
         Args:
             text: Text to embed
@@ -121,12 +135,34 @@ class EmbeddingGenerator:
         Returns:
             Embedding vector as list of floats
         """
-        if self.provider == EmbeddingProvider. SENTENCE_TRANSFORMERS:
-            return self._embed_sentence_transformers(text)
+        # Create cache key from text hash
+        cache_key = hashlib.md5(text.encode('utf-8')).hexdigest()
+        
+        # Check cache first
+        if cache_key in self.cache:
+            self.cache_hits += 1
+            print(f"✓ Cache hit! (hits: {self.cache_hits}, misses: {self.cache_misses})")
+            return self.cache[cache_key]
+        
+        # Cache miss - generate embedding
+        self.cache_misses += 1
+        start_time = time.time()
+        
+        if self.provider == EmbeddingProvider.SENTENCE_TRANSFORMERS:
+            embedding = self._embed_sentence_transformers(text)
         elif self.provider == EmbeddingProvider.GOOGLE:
-            return self._embed_google(text)
-        elif self. provider == EmbeddingProvider. OPENAI:
-            return self._embed_openai(text)
+            embedding = self._embed_google(text)
+        elif self.provider == EmbeddingProvider.OPENAI:
+            embedding = self._embed_openai(text)
+        
+        elapsed = time.time() - start_time
+        print(f"✓ Embedding generated in {elapsed:.2f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
+        
+        # Store in cache (limit cache size to 1000 entries)
+        if len(self.cache) < 1000:
+            self.cache[cache_key] = embedding
+        
+        return embedding
     
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """

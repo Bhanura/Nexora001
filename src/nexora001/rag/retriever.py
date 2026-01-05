@@ -99,16 +99,18 @@ class DocumentRetriever:
             metadata = result['metadata']
             score = result['score']
             
+            # Optimize: Truncate very long content to reduce LLM processing time
+            max_chars = 800  # Limit each chunk to 800 chars
+            if len(content) > max_chars:
+                content = content[:max_chars] + "..."
+            
             # Add to context with better formatting
             title = metadata.get('title', 'Unknown')
             url = metadata.get('source_url', 'Unknown')
             
+            # Simplified context format - less tokens
             context_parts.append(
-                f"[Document {i}]\n"
-                f"Source: {title}\n"
-                f"URL: {url}\n"
-                f"Relevance: {score:.2f}\n"
-                f"Content:\n{content}\n"
+                f"[{i}] {title}\n{content}\n"
             )
             
             # Add to sources

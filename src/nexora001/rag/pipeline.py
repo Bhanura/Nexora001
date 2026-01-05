@@ -5,6 +5,8 @@ Complete RAG pipeline that combines retrieval and generation.
 from typing import Dict, List, Optional
 import sys
 from pathlib import Path
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -48,6 +50,17 @@ class RAGPipeline:
         )
         
         self.conversation_history: List[Dict] = []
+        self.executor = ThreadPoolExecutor(max_workers=2)  # For async DB operations
+    
+    def _save_chat_to_db(self, session_id: str, user_msg: str, assistant_msg: str):
+        """Background task to save chat history to database."""
+        try:
+            from nexora001.storage.mongodb import get_storage
+            with get_storage() as storage:
+                storage.add_chat_message(session_id, "user", user_msg)
+                storage.add_chat_message(session_id, "assistant", assistant_msg)
+        except Exception as e:
+            print(f"Warning: Failed to save chat history: {e}")
     
     def ask(
         self,
@@ -100,15 +113,10 @@ class RAGPipeline:
             self.conversation_history.append({'role': 'user', 'content': query})
             self.conversation_history.append({'role': 'assistant', 'content': answer})
 
-            # Step 4: Save to Database (Persistent)
+            # Step 4: Save to Database (Non-Blocking - Async)
             if session_id:
-                from nexora001.storage.mongodb import get_storage
-                try:
-                    with get_storage() as storage:
-                        storage.add_chat_message(session_id, "user", query)
-                        storage.add_chat_message(session_id, "assistant", answer)
-                except Exception as e:
-                    print(f"Warning: Failed to save chat history: {e}")
+                # Submit to background thread - don't wait for completion
+                self.executor.submit(self._save_chat_to_db, session_id, query, answer)
             
             return {
                 'answer': answer,

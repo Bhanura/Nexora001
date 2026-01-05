@@ -242,7 +242,19 @@ class MongoDBStorage:
             
             results = list(self.documents.aggregate(pipeline))
             elapsed = time.time() - start
-            print(f"✅ Atlas Vector Search: {len(results)} results in {elapsed:.3f}s")
+            
+            if len(results) == 0:
+                print(f"⚠️  Atlas Search returned 0 results")
+                print(f"   Checking total docs for client: {client_id}")
+                total = self.documents.count_documents({"client_id": client_id, "embedding": {"$exists": True}})
+                print(f"   Total docs available: {total}")
+                if total == 0:
+                    print(f"   ❌ No documents found for this client!")
+                else:
+                    print(f"   ⚠️  Documents exist but similarity too low. Try lowering min_score.")
+            else:
+                print(f"✅ Atlas Vector Search: {len(results)} results in {elapsed:.3f}s")
+            
             return results
             
         except Exception as e:

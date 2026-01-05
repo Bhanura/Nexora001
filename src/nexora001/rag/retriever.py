@@ -49,6 +49,11 @@ class DocumentRetriever:
         # Generate query embedding
         query_embedding = self.embedding_generator.generate_embedding(query)
         
+        # Debug logging
+        print(f"🔍 Searching for client_id: {client_id}")
+        print(f"   Query: {query[:100]}...")
+        print(f"   Min similarity: {self.min_similarity}")
+        
         # Search for similar documents
         with get_storage() as storage:
             results = storage.vector_search(

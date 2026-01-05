@@ -173,9 +173,14 @@ class Nexora001Spider(scrapy.Spider):
         if page:
             await page.close()
         
-        # Check if already crawled
+        # Check if already crawled (with better logging)
         if self.storage.url_exists(self.client_id, response.url):
-            self.logger.info(f"  Skipping (already crawled): {response.url}")
+            doc_count = self.storage.documents.count_documents({
+                "client_id": self.client_id,
+                "metadata.source_url": response.url
+            })
+            self.logger.info(f"  ⏭️  Skipping (already crawled): {response.url}")
+            self.logger.info(f"     Existing documents from this URL: {doc_count}")
             return
         
         # Extract text content

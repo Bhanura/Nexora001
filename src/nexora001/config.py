@@ -36,6 +36,20 @@ class Settings(BaseSettings):
         description="Google Gemini API key"
     )
     
+    # Vector Search Configuration
+    use_qdrant: bool = Field(
+        default=True,
+        description="Use Qdrant for vector search (True) or MongoDB Atlas (False)"
+    )
+    qdrant_url: str = Field(
+        default="http://localhost:6333",
+        description="Qdrant server URL"
+    )
+    qdrant_api_key: Optional[str] = Field(
+        default=None,
+        description="Qdrant API key (optional, for cloud instances)"
+    )
+    
     # Application Configuration
     debug: bool = Field(default=True)
     log_level: str = Field(default="INFO")
@@ -50,6 +64,12 @@ class Settings(BaseSettings):
     # API Configuration
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
+    
+    # Security
+    jwt_secret_key: str = Field(
+        default="your-secret-key-change-in-production",
+        description="JWT secret key for token generation"
+    )
     
     # Use model_config instead of inner Config class (Pydantic v2 style)
     model_config = SettingsConfigDict(
@@ -128,6 +148,13 @@ def print_config_status():
         google_status = "❌ Not Set"
         google_display = "Not configured"
     table.add_row("Google API Key", google_status, google_display)
+    
+    # Qdrant
+    if settings.use_qdrant:
+        qdrant_display = settings.qdrant_url
+        table.add_row("Vector Search", "✅ Qdrant", qdrant_display)
+    else:
+        table.add_row("Vector Search", "⚠️ MongoDB Atlas", "Legacy mode")
     
     # Other settings
     table. add_row("Environment", "✅ Set", settings.environment)

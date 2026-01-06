@@ -64,8 +64,8 @@ services:
       
       # Environment
       ENVIRONMENT: production
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       mongodb:
         condition: service_healthy
@@ -82,19 +82,45 @@ services:
       retries: 3
       start_period: 40s
 
-  # Frontend - React/Vue (if applicable)
-  # frontend:
-  #   build:
-  #     context: ../Nexora-Frontend
-  #     dockerfile: Dockerfile
-  #   container_name: nexora-frontend
-  #   restart: always
-  #   ports:
-  #     - "3000:80"
-  #   networks:
-  #     - nexora-network
-  #   depends_on:
-  #     - backend
+  # Frontend - React Application
+  frontend:
+    build:
+      context: ../Nexora001_Frontend
+      dockerfile: Dockerfile
+    container_name: nexora-frontend
+    restart: always
+    expose:
+      - "80"
+    networks:
+      - nexora-network
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"
+      ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Nginx - Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: nexora-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro  # For SSL certificates (optional)
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - nexora-network
+    # Health check removed - nginx is lightweight and starts quickly
+    # The application will fail fast if nginx isn't working
 
 volumes:
   mongodb_data:

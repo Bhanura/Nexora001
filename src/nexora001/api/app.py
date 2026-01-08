@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from nexora001.api.routes import chat, ingest, system, auth, admin, notification
+from nexora001.api.routes import chat, ingest, system, auth, admin, notification, data_collection
 
 
 # ============================================================================
@@ -76,6 +76,11 @@ app.include_router(
     notification.router, 
     prefix="/api/notifications", 
     tags=["Notifications"]
+)
+
+app.include_router(
+    data_collection.router,
+    tags=["Data Collection"]
 )
 
 # ============================================================================

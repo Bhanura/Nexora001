@@ -224,3 +224,132 @@ class UpdateChatbotSettingsRequest(BaseModel):
                 "chatbot_personality": "professional, concise, and technical"
             }
         }
+
+
+# ============================================================================
+# USER DATA COLLECTION MODELS (FEATURE 2)
+# ============================================================================
+
+class CustomField(BaseModel):
+    """Model for a custom form field."""
+    field_id: str = Field(..., description="Unique field identifier (e.g., 'name', 'email')")
+    label: str = Field(..., min_length=1, max_length=100, description="Field label shown to user")
+    field_type: str = Field(..., description="Field type: text, email, phone, textarea, number, url")
+    placeholder: Optional[str] = Field(None, max_length=200, description="Placeholder text")
+    required: bool = Field(default=False, description="Whether field is required")
+    order: int = Field(..., ge=0, description="Display order (0-based)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "field_id": "customer_name",
+                "label": "Your Name",
+                "field_type": "text",
+                "placeholder": "John Doe",
+                "required": True,
+                "order": 0
+            }
+        }
+
+
+class UserDataCollectionSettings(BaseModel):
+    """Settings for user data collection form."""
+    enabled: bool = Field(default=False, description="Enable/disable data collection")
+    custom_fields: List[CustomField] = Field(default_factory=list, description="Custom form fields")
+    data_collection_timing: str = Field(
+        default="after_first_message",
+        description="When to show form: 'immediately' or 'after_first_message'"
+    )
+    data_collection_message: str = Field(
+        default="Please share your details:",
+        max_length=500,
+        description="Message shown above the form"
+    )
+    notification_emails: List[str] = Field(
+        default_factory=list,
+        description="Email addresses to notify on new submissions"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "enabled": True,
+                "custom_fields": [
+                    {
+                        "field_id": "name",
+                        "label": "Your Name",
+                        "field_type": "text",
+                        "required": True,
+                        "order": 0
+                    },
+                    {
+                        "field_id": "email",
+                        "label": "Email Address",
+                        "field_type": "email",
+                        "required": True,
+                        "order": 1
+                    }
+                ],
+                "data_collection_timing": "after_first_message",
+                "data_collection_message": "Please provide your contact details:",
+                "notification_emails": ["admin@company.com", "sales@company.com"]
+            }
+        }
+
+
+class UpdateDataCollectionSettingsRequest(BaseModel):
+    """Request to update data collection settings."""
+    enabled: Optional[bool] = None
+    custom_fields: Optional[List[CustomField]] = None
+    data_collection_timing: Optional[str] = Field(None, pattern="^(immediately|after_first_message)$")
+    data_collection_message: Optional[str] = Field(None, max_length=500)
+    notification_emails: Optional[List[str]] = None
+
+
+class UserDataSubmission(BaseModel):
+    """Model for user data submission from widget."""
+    session_id: str = Field(..., description="Chat session ID")
+    submitted_data: Dict[str, Any] = Field(..., description="Form data (field_id -> value)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "session_id": "sess_123456",
+                "submitted_data": {
+                    "name": "John Doe",
+                    "email": "john@example.com",
+                    "phone": "555-1234"
+                }
+            }
+        }
+
+
+class UserSubmissionRecord(BaseModel):
+    """Response model for a stored submission."""
+    submission_id: str
+    client_id: str
+    session_id: str
+    submitted_data: Dict[str, Any]
+    submitted_at: datetime
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "submission_id": "sub_abc123",
+                "client_id": "client_xyz",
+                "session_id": "sess_123456",
+                "submitted_data": {
+                    "name": "John Doe",
+                    "email": "john@example.com"
+                },
+                "submitted_at": "2026-01-08T10:30:00Z"
+            }
+        }
+
+
+class SubmissionListResponse(BaseModel):
+    """Response for listing submissions."""
+    submissions: List[UserSubmissionRecord]
+    total: int
+    page: int
+    page_size: int

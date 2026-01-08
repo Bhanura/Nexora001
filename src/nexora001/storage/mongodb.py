@@ -31,6 +31,7 @@ class MongoDBStorage:
         self.crawl_jobs: Collection = self.db["crawl_jobs"]
         self.api_keys: Collection = self.db["api_keys"]      # NEW: Stores widget keys
         self.chat_sessions: Collection = self.db["chat_sessions"]  # NEW: Stores chat history
+        self.user_submissions: Collection = self.db["user_submissions"]  # FEATURE 2: User data submissions
         
         self._create_indexes()
     
@@ -59,6 +60,11 @@ class MongoDBStorage:
         
         try:
             self.chat_sessions.create_index("session_id", unique=True)
+        except Exception:
+            pass
+        
+        try:
+            self.user_submissions.create_index([("client_id", ASCENDING), ("submitted_at", ASCENDING)])
         except Exception:
             pass
         
@@ -569,7 +575,113 @@ class MongoDBStorage:
             {"_id": ObjectId(user_id)},
             {"$set": {"password_hash": new_hash}}
         )
-        return res.modified_count > 0    
+        return res.modified_count > 0
+    
+    # ==========================================
+    # 9. USER DATA COLLECTION (FEATURE 2)
+    # ==========================================
+    
+    def update_data_collection_settings(self, client_id: str, settings: Dict[str, Any]) -> bool:
+        """Update user data collection settings for a client."""
+        # Build $set dict only with provided fields
+        set_fields = {}
+        if "enabled" in settings:
+            set_fields["data_collection_enabled"] = settings["enabled"]
+        if "custom_fields" in settings:
+            set_fields["custom_fields"] = settings["custom_fields"]
+        if "data_collection_timing" in settings:
+            set_fields["data_collection_timing"] = settings["data_collection_timing"]
+        if "data_collection_message" in settings:
+            set_fields["data_collection_message"] = settings["data_collection_message"]
+        if "notification_emails" in settings:
+            set_fields["notification_emails"] = settings["notification_emails"]
+        
+        if not set_fields:
+            return False
+        
+        result = self.users.update_one(
+            {"_id": ObjectId(client_id)},
+            {"$set": set_fields}
+        )
+        return result.modified_count > 0 or result.matched_count > 0
+    
+    def get_data_collection_settings(self, client_id: str) -> Optional[Dict[str, Any]]:
+        """Get user data collection settings for a client."""
+        user = self.users.find_one({"_id": ObjectId(client_id)})
+        if not user:
+            return None
+        
+        return {
+            "enabled": user.get("data_collection_enabled", False),
+            "custom_fields": user.get("custom_fields", []),
+            "data_collection_timing": user.get("data_collection_timing", "after_first_message"),
+            "data_collection_message": user.get("data_collection_message", "Please share your details:"),
+            "notification_emails": user.get("notification_emails", [])
+        }
+    
+    def save_user_submission(
+        self,
+        client_id: str,
+        session_id: str,
+        submitted_data: Dict[str, Any]
+    ) -> str:
+        """
+        Save a user data submission.
+        
+        Returns:
+            Submission ID
+        """
+        submission = {
+            "client_id": client_id,
+            "session_id": session_id,
+            "submitted_data": submitted_data,
+            "submitted_at": datetime.utcnow()
+        }
+        result = self.user_submissions.insert_one(submission)
+        return str(result.inserted_id)
+    
+    def get_user_submissions(
+        self,
+        client_id: str,
+        page: int = 1,
+        page_size: int = 50
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        Get user submissions for a client with pagination.
+        
+        Returns:
+            Tuple of (submissions list, total count)
+        """
+        query = {"client_id": client_id}
+        
+        total = self.user_submissions.count_documents(query)
+        
+        submissions = list(
+            self.user_submissions
+            .find(query)
+            .sort("submitted_at", -1)
+            .skip((page - 1) * page_size)
+            .limit(page_size)
+        )
+        
+        # Convert ObjectId to string
+        for sub in submissions:
+            sub["submission_id"] = str(sub.pop("_id"))
+        
+        return submissions, total
+    
+    def delete_user_submission(self, submission_id: str, client_id: str) -> bool:
+        """
+        Delete a user submission (only if it belongs to the client).
+        
+        Returns:
+            True if deleted, False if not found or not owned by client
+        """
+        result = self.user_submissions.delete_one({
+            "_id": ObjectId(submission_id),
+            "client_id": client_id
+        })
+        return result.deleted_count > 0
 
 def get_storage():
     return MongoDBStorage()

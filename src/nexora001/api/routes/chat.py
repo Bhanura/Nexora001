@@ -246,6 +246,39 @@ async def get_widget_config(
 
 
 @router.get(
+    "/widget-data-collection-config",
+    summary="Get data collection configuration for widget",
+    description="Returns data collection settings (fields, timing, message) for the widget."
+)
+async def get_widget_data_collection_config(
+    x_api_key: str = Header(..., alias="X-API-KEY", description="Client API Key"),
+    client_id: str = Depends(get_user_from_api_key),
+    storage: MongoDBStorage = Depends(get_storage)
+):
+    """
+    Public endpoint: Widget calls this to get data collection form configuration.
+    Authentication: API Key in header
+    """
+    try:
+        # Get data collection settings
+        settings = storage.get_data_collection_settings(client_id)
+        
+        if not settings or not settings.get("enabled", False):
+            # Return disabled state if not configured
+            return {
+                "enabled": False,
+                "custom_fields": [],
+                "data_collection_timing": "after_first_message",
+                "data_collection_message": "Please share your details:"
+            }
+        
+        return settings
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
     "/settings/chatbot",
     response_model=ChatbotSettings,
     summary="Get chatbot settings",
@@ -300,13 +333,14 @@ async def update_chatbot_settings(
             raise HTTPException(status_code=400, detail="No updates provided")
         
         # Update in database
-        success = storage.update_chatbot_settings(current_user["_id"], updates)
+        client_id = str(current_user["_id"])
+        success = storage.update_chatbot_settings(client_id, updates)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update settings")
         
         # Return updated settings
-        settings = storage.get_chatbot_settings(current_user["_id"])
+        settings = storage.get_chatbot_settings(client_id)
         return ChatbotSettings(**settings)
         
     except HTTPException:

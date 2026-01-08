@@ -68,7 +68,9 @@ class RAGPipeline:
         client_id: str,
         session_id: str = None,
         use_history: bool = True,
-        stream: bool = False
+        stream: bool = False,
+        chatbot_name: str = "AI Assistant",
+        chatbot_personality: str = "friendly and helpful"
     ) -> Dict:
         """
         Ask a question and get an answer.
@@ -79,6 +81,8 @@ class RAGPipeline:
             session_id: Session ID for chat history (optional)
             use_history: Whether to use conversation history
             stream: Whether to stream the response
+            chatbot_name: Custom bot name
+            chatbot_personality: Custom personality traits
             
         Returns:
             Dictionary with answer, sources, and metadata
@@ -96,7 +100,7 @@ class RAGPipeline:
         if stream:
             # Return generator for streaming
             answer_generator = self.generator.generate_streaming_answer(
-                query, context, conversation
+                query, context, conversation, chatbot_name, chatbot_personality
             )
             
             return {
@@ -107,7 +111,7 @@ class RAGPipeline:
             }
         else:
             # Generate the answer first
-            answer = self.generator.generate_answer(query, context, conversation)
+            answer = self.generator.generate_answer(query, context, conversation, chatbot_name, chatbot_personality)
             
             # Step 3: Save to Memory (In-Memory)
             self.conversation_history.append({'role': 'user', 'content': query})

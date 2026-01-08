@@ -66,7 +66,9 @@ Guidelines:
         self,
         query: str,
         context: str,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        chatbot_name: str = "AI Assistant",
+        chatbot_personality: str = "friendly and helpful"
     ) -> str:
         """
         Generate an answer based on query and context.
@@ -75,12 +77,14 @@ Guidelines:
             query: User's question
             context: Retrieved document context
             conversation_history: Previous conversation (optional)
+            chatbot_name: Custom bot name
+            chatbot_personality: Custom personality traits
             
         Returns:
             Generated answer
         """
         # Build prompt
-        prompt = self._build_prompt(query, context, conversation_history)
+        prompt = self._build_prompt(query, context, conversation_history, chatbot_name, chatbot_personality)
         
         try:
             # Generate response
@@ -114,7 +118,9 @@ Guidelines:
         self,
         query: str,
         context: str,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        chatbot_name: str = "AI Assistant",
+        chatbot_personality: str = "friendly and helpful"
     ) -> str:
         """
         Build the complete prompt for the LLM.
@@ -123,11 +129,35 @@ Guidelines:
             query: User's question
             context: Retrieved documents
             conversation_history: Previous messages
+            chatbot_name: Custom bot name
+            chatbot_personality: Custom personality traits
             
         Returns:
             Complete prompt string
         """
-        prompt_parts = [self.system_prompt, ""]
+        # Dynamic system prompt
+        system_prompt = f"""You are {chatbot_name}, an intelligent AI assistant that helps users understand technical documentation.
+
+Your personality: {chatbot_personality}
+
+Your responsibilities:
+1. Answer questions based on the provided context documents
+2. If the documents contain relevant information, use it to provide a helpful answer
+3. If the documents don't directly answer the question but contain related information, explain what you found
+4. Only say "I don't have enough information" if the documents are completely unrelated to the question
+5. Be comprehensive and helpful while staying accurate to the source material
+6. Use a {chatbot_personality} tone
+
+Guidelines:
+- Extract and synthesize information from multiple documents when relevant
+- If asked a broad question (like "What is X?"), provide a clear explanation using the available context
+- Connect information across documents to give complete answers
+- Provide direct answers without mentioning source document numbers or citations
+- Do not use brackets like [Document 1] or [Source 2] in your final response
+- When asked who you are, respond as {chatbot_name}
+- Just provide the correct answer politely"""
+        
+        prompt_parts = [system_prompt, ""]
         
         # Add conversation history if available
         if conversation_history:
@@ -155,7 +185,9 @@ Guidelines:
         self,
         query: str,
         context: str,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        chatbot_name: str = "AI Assistant",
+        chatbot_personality: str = "friendly and helpful"
     ):
         """
         Generate answer with streaming (for real-time display).
@@ -164,11 +196,13 @@ Guidelines:
             query: User's question
             context: Retrieved documents
             conversation_history: Previous conversation
+            chatbot_name: Custom bot name
+            chatbot_personality: Custom personality traits
             
         Yields:
             Chunks of generated text
         """
-        prompt = self._build_prompt(query, context, conversation_history)
+        prompt = self._build_prompt(query, context, conversation_history, chatbot_name, chatbot_personality)
         
         try:
             response = self.model.generate_content(prompt, stream=True)

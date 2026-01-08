@@ -188,3 +188,39 @@ class ErrorResponse(BaseModel):
                 "details": {"field": "url"}
             }
         }
+
+
+# ============================================================================
+# CHATBOT SETTINGS MODELS
+# ============================================================================
+
+class ChatbotSettings(BaseModel):
+    """Response model for chatbot configuration."""
+    chatbot_name: str = Field(default="AI Assistant", description="Custom chatbot name")
+    chatbot_greeting: str = Field(default="Hello! How can I help you today?", description="Welcome message")
+    chatbot_personality: str = Field(default="friendly and helpful", description="Bot personality traits")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "chatbot_name": "TechSupport Pro",
+                "chatbot_greeting": "Welcome to TechCorp! How can we assist you?",
+                "chatbot_personality": "professional and technical"
+            }
+        }
+
+
+class UpdateChatbotSettingsRequest(BaseModel):
+    """Request model for updating chatbot settings."""
+    chatbot_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Custom chatbot name")
+    chatbot_greeting: Optional[str] = Field(None, min_length=1, max_length=500, description="Welcome message")
+    chatbot_personality: Optional[str] = Field(None, min_length=1, max_length=500, description="Bot personality")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "chatbot_name": "TechSupport Pro",
+                "chatbot_greeting": "Welcome! How can we help?",
+                "chatbot_personality": "professional, concise, and technical"
+            }
+        }

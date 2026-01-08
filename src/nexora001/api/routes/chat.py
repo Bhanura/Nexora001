@@ -9,9 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from nexora001.api.models import ChatRequest, ChatResponse, Source, ErrorResponse
-from nexora001.api.dependencies import get_rag_pipeline, get_current_user, get_user_from_api_key
+from nexora001.api.models import ChatRequest, ChatResponse, Source, ErrorResponse, ChatbotSettings, UpdateChatbotSettingsRequest
+from nexora001.api.dependencies import get_rag_pipeline, get_current_user, get_user_from_api_key, get_storage
 from nexora001.rag.pipeline import RAGPipeline
+from nexora001.storage.mongodb import MongoDBStorage
 
 router = APIRouter()
 
@@ -107,7 +108,8 @@ async def chat_widget(
     request: ChatRequest,
     x_api_key: str = Header(..., description="Client API Key"),
     rag: RAGPipeline = Depends(get_rag_pipeline),
-    client_id: str = Depends(get_user_from_api_key)  # <--- Validates Key
+    client_id: str = Depends(get_user_from_api_key),
+    storage: MongoDBStorage = Depends(get_storage)
 ):
     """
     Public Chat (Widget): Uses API Key Authentication.
@@ -123,11 +125,20 @@ async def chat_widget(
         # For public widgets, we rely on the client_id extracted from the key
         session_id = request.session_id or "anonymous-visitor"
         
+        # Fetch chatbot settings for this client
+        chatbot_settings = storage.get_chatbot_settings(client_id)
+        
+        # Use settings or defaults
+        chatbot_name = chatbot_settings.get("chatbot_name", "AI Assistant") if chatbot_settings else "AI Assistant"
+        chatbot_personality = chatbot_settings.get("chatbot_personality", "friendly and helpful") if chatbot_settings else "friendly and helpful"
+        
         result = rag.ask(
             query=request.message,
             client_id=client_id,
             session_id=session_id,
-            use_history=request.use_history
+            use_history=request.use_history,
+            chatbot_name=chatbot_name,
+            chatbot_personality=chatbot_personality
         )
         
         sources = [
@@ -199,3 +210,106 @@ async def get_history(rag: RAGPipeline = Depends(get_rag_pipeline)):
                 "message": str(e)
             }
         )
+
+
+# ============================================================================
+# CHATBOT SETTINGS ENDPOINTS
+# ============================================================================
+
+@router.get(
+    "/widget-config",
+    response_model=ChatbotSettings,
+    summary="Get chatbot configuration for widget",
+    description="Returns customized chatbot settings (name, greeting, personality) for the widget based on API key."
+)
+async def get_widget_config(
+    x_api_key: str = Header(..., alias="X-API-KEY", description="Client API Key"),
+    client_id: str = Depends(get_user_from_api_key),
+    storage: MongoDBStorage = Depends(get_storage)
+):
+    """
+    Public endpoint: Widget calls this on load to get custom branding.
+    Authentication: API Key in header
+    """
+    try:
+        # Get chatbot settings from database
+        settings = storage.get_chatbot_settings(client_id)
+        
+        if not settings:
+            # Return defaults if user not found
+            return ChatbotSettings()
+        
+        return ChatbotSettings(**settings)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/settings/chatbot",
+    response_model=ChatbotSettings,
+    summary="Get chatbot settings",
+    description="Retrieve current chatbot settings for authenticated user."
+)
+async def get_chatbot_settings_endpoint(
+    current_user: dict = Depends(get_current_user),
+    storage: MongoDBStorage = Depends(get_storage)
+):
+    """
+    Dashboard endpoint: Get current chatbot settings.
+    Authentication: JWT token
+    """
+    try:
+        settings = storage.get_chatbot_settings(current_user["_id"])
+        
+        if not settings:
+            return ChatbotSettings()
+        
+        return ChatbotSettings(**settings)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put(
+    "/settings/chatbot",
+    response_model=ChatbotSettings,
+    summary="Update chatbot settings",
+    description="Allows authenticated admin to customize their chatbot's name, greeting, and personality."
+)
+async def update_chatbot_settings(
+    request: UpdateChatbotSettingsRequest,
+    current_user: dict = Depends(get_current_user),
+    storage: MongoDBStorage = Depends(get_storage)
+):
+    """
+    Dashboard endpoint: Admin updates chatbot branding.
+    Authentication: JWT token
+    """
+    try:
+        # Build update dictionary (only include fields that were provided)
+        updates = {}
+        if request.chatbot_name is not None:
+            updates["chatbot_name"] = request.chatbot_name
+        if request.chatbot_greeting is not None:
+            updates["chatbot_greeting"] = request.chatbot_greeting
+        if request.chatbot_personality is not None:
+            updates["chatbot_personality"] = request.chatbot_personality
+        
+        if not updates:
+            raise HTTPException(status_code=400, detail="No updates provided")
+        
+        # Update in database
+        success = storage.update_chatbot_settings(current_user["_id"], updates)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update settings")
+        
+        # Return updated settings
+        settings = storage.get_chatbot_settings(current_user["_id"])
+        return ChatbotSettings(**settings)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

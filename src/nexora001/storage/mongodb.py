@@ -82,7 +82,11 @@ class MongoDBStorage:
             "name": name,
             "role": "client_admin",
             "created_at": datetime.utcnow(),
-            "status": "active"
+            "status": "active",
+            # Chatbot customization defaults
+            "chatbot_name": "AI Assistant",
+            "chatbot_greeting": "Hello! How can I help you today?",
+            "chatbot_personality": "friendly and helpful"
         }
         return str(self.users.insert_one(user).inserted_id)
 
@@ -100,6 +104,26 @@ class MongoDBStorage:
 
     def get_user_by_id(self, user_id: str) -> Optional[Dict]:
         return self.users.find_one({"_id": ObjectId(user_id)})
+
+    def update_chatbot_settings(self, client_id: str, settings: Dict) -> bool:
+        """Update chatbot customization settings for a client."""
+        result = self.users.update_one(
+            {"_id": ObjectId(client_id)},
+            {"$set": settings}
+        )
+        return result.modified_count > 0
+
+    def get_chatbot_settings(self, client_id: str) -> Optional[Dict]:
+        """Retrieve chatbot settings for a client with defaults."""
+        user = self.users.find_one({"_id": ObjectId(client_id)})
+        if not user:
+            return None
+        
+        return {
+            "chatbot_name": user.get("chatbot_name", "AI Assistant"),
+            "chatbot_greeting": user.get("chatbot_greeting", "Hello! How can I help you today?"),
+            "chatbot_personality": user.get("chatbot_personality", "friendly and helpful")
+        }
 
     # ==========================================
     # 2. API KEY

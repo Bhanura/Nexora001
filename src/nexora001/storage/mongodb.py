@@ -32,6 +32,7 @@ class MongoDBStorage:
         self.api_keys: Collection = self.db["api_keys"]      # NEW: Stores widget keys
         self.chat_sessions: Collection = self.db["chat_sessions"]  # NEW: Stores chat history
         self.user_submissions: Collection = self.db["user_submissions"]  # FEATURE 2: User data submissions
+        self.activity_logs: Collection = self.db["activity_logs"]  # PHASE 3: Activity logging
         
         self._create_indexes()
     
@@ -65,6 +66,16 @@ class MongoDBStorage:
         
         try:
             self.user_submissions.create_index([("client_id", ASCENDING), ("submitted_at", ASCENDING)])
+        except Exception:
+            pass
+        
+        try:
+            self.activity_logs.create_index([("user_id", ASCENDING), ("timestamp", ASCENDING)])
+        except Exception:
+            pass
+        
+        try:
+            self.activity_logs.create_index("timestamp", expireAfterSeconds=7776000)  # 90 days retention
         except Exception:
             pass
         
@@ -168,6 +179,116 @@ class MongoDBStorage:
             uid = str(user["_id"])
             user["doc_count"] = self.documents.count_documents({"client_id": uid})
             user["api_keys"] = self.api_keys.count_documents({"client_id": uid})
+        return users
+    
+    def calculate_user_storage(self, client_id: str) -> Dict[str, Any]:
+        """Calculate total storage used by user (all data types)."""
+        try:
+            import sys
+            
+            # 1. Document files (actual uploaded files)
+            docs = list(self.documents.find({"client_id": client_id}))
+            doc_size = sum(doc.get("file_size", 0) for doc in docs)
+            doc_count = len(docs)
+            
+            # 2. Qdrant vectors (embeddings)
+            vector_count = 0
+            vector_size = 0
+            try:
+                from qdrant_client import QdrantClient
+                qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+                qdrant = QdrantClient(url=qdrant_url)
+                collection_name = f"client_{client_id}"
+                collection_info = qdrant.get_collection(collection_name)
+                vector_count = collection_info.vectors_count or 0
+                # Estimate: ~1KB per vector (768 dimensions * 4 bytes + metadata)
+                vector_size = vector_count * 1024
+            except Exception:
+                pass  # Collection doesn't exist or Qdrant unavailable
+            
+            # 3. Chat sessions (conversation history)
+            chat_sessions = list(self.chat_sessions.find({"client_id": client_id}))
+            chat_size = sum(sys.getsizeof(str(session)) for session in chat_sessions)
+            chat_count = len(chat_sessions)
+            
+            # 4. Crawl jobs (scraped web content)
+            crawl_jobs = list(self.crawl_jobs.find({"client_id": client_id}))
+            crawl_size = sum(sys.getsizeof(str(job)) for job in crawl_jobs)
+            crawl_count = len(crawl_jobs)
+            
+            # 5. User submissions (form data from Feature 2)
+            submissions = list(self.user_submissions.find({"client_id": client_id}))
+            submission_size = sum(sys.getsizeof(str(sub)) for sub in submissions)
+            submission_count = len(submissions)
+            
+            # 6. Document metadata and chunks (stored in MongoDB)
+            # Estimate: Each document has chunks stored as text
+            metadata_size = 0
+            for doc in docs:
+                # Chunks are typically stored in document or separate collection
+                chunks = doc.get("chunks", [])
+                metadata_size += sys.getsizeof(str(chunks))
+            
+            # Calculate totals
+            total_bytes = (
+                doc_size +           # Actual files
+                vector_size +        # Qdrant vectors
+                chat_size +          # Chat history
+                crawl_size +         # Crawled content
+                submission_size +    # Form submissions
+                metadata_size        # Chunks & metadata
+            )
+            total_mb = round(total_bytes / (1024 * 1024), 2)
+            
+            return {
+                "total_bytes": total_bytes,
+                "total_mb": total_mb,
+                "documents_bytes": doc_size,
+                "vectors_bytes": vector_size,
+                "chat_sessions_bytes": chat_size,
+                "crawl_jobs_bytes": crawl_size,
+                "submissions_bytes": submission_size,
+                "metadata_bytes": metadata_size,
+                "vector_count": vector_count,
+                "document_count": doc_count,
+                "chat_session_count": chat_count,
+                "crawl_job_count": crawl_count,
+                "submission_count": submission_count,
+                "breakdown": {
+                    "documents": f"{round(doc_size / (1024 * 1024), 2)} MB",
+                    "vectors": f"{round(vector_size / (1024 * 1024), 2)} MB",
+                    "chats": f"{round(chat_size / (1024 * 1024), 2)} MB",
+                    "crawls": f"{round(crawl_size / (1024 * 1024), 2)} MB",
+                    "submissions": f"{round(submission_size / (1024 * 1024), 2)} MB",
+                    "metadata": f"{round(metadata_size / (1024 * 1024), 2)} MB"
+                }
+            }
+        except Exception as e:
+            # Return empty stats on error
+            return {
+                "total_bytes": 0,
+                "total_mb": 0.0,
+                "documents_bytes": 0,
+                "vectors_bytes": 0,
+                "chat_sessions_bytes": 0,
+                "crawl_jobs_bytes": 0,
+                "submissions_bytes": 0,
+                "metadata_bytes": 0,
+                "vector_count": 0,
+                "document_count": 0,
+                "chat_session_count": 0,
+                "crawl_job_count": 0,
+                "submission_count": 0,
+                "breakdown": {}
+            }
+    
+    def get_all_users_with_storage(self) -> List[Dict]:
+        """Get all users with storage calculations included."""
+        users = list(self.users.find({}, {"password_hash": 0}))
+        for user in users:
+            uid = str(user["_id"])
+            user["api_keys"] = self.api_keys.count_documents({"client_id": uid})
+            user["storage"] = self.calculate_user_storage(uid)
         return users
 
     def set_user_status(self, email: str, status: str) -> bool:
@@ -682,6 +803,129 @@ class MongoDBStorage:
             "client_id": client_id
         })
         return result.deleted_count > 0
+
+    # ==========================================
+    # 10. ACTIVITY LOGGING
+    # ==========================================
+    def log_activity(
+        self,
+        user_id: str,
+        action_type: str,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> str:
+        """
+        Log user activity for audit trail.
+        
+        Args:
+            user_id: User performing the action
+            action_type: Type of action (login, logout, upload, delete, create, update, etc.)
+            resource_type: Type of resource (document, api_key, user, chat_session, etc.)
+            resource_id: ID of the resource affected
+            details: Additional context (e.g., filename, previous values)
+            ip_address: User's IP address
+            user_agent: User's browser/client info
+            
+        Returns:
+            Activity log ID
+        """
+        log_entry = {
+            "user_id": user_id,
+            "action_type": action_type,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "details": details or {},
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "timestamp": datetime.utcnow()
+        }
+        return str(self.activity_logs.insert_one(log_entry).inserted_id)
+    
+    def get_activity_logs(
+        self,
+        user_id: Optional[str] = None,
+        action_type: Optional[str] = None,
+        resource_type: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        limit: int = 100,
+        skip: int = 0
+    ) -> tuple[List[Dict], int]:
+        """
+        Retrieve activity logs with filtering and pagination.
+        
+        Returns:
+            Tuple of (logs list, total count)
+        """
+        query = {}
+        
+        if user_id:
+            query["user_id"] = user_id
+        if action_type:
+            query["action_type"] = action_type
+        if resource_type:
+            query["resource_type"] = resource_type
+        if start_date or end_date:
+            query["timestamp"] = {}
+            if start_date:
+                query["timestamp"]["$gte"] = start_date
+            if end_date:
+                query["timestamp"]["$lte"] = end_date
+        
+        total = self.activity_logs.count_documents(query)
+        logs = list(
+            self.activity_logs
+            .find(query)
+            .sort("timestamp", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        
+        # Convert ObjectId to string
+        for log in logs:
+            log["_id"] = str(log["_id"])
+        
+        return logs, total
+    
+    def get_user_activity_summary(self, user_id: str, days: int = 30) -> Dict[str, Any]:
+        """
+        Get activity summary for a user over the last N days.
+        
+        Returns:
+            Dictionary with action type counts and recent activities
+        """
+        from datetime import timedelta
+        
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get action type counts
+        pipeline = [
+            {"$match": {"user_id": user_id, "timestamp": {"$gte": start_date}}},
+            {"$group": {"_id": "$action_type", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        
+        action_counts = {item["_id"]: item["count"] for item in self.activity_logs.aggregate(pipeline)}
+        
+        # Get recent activities
+        recent_logs = list(
+            self.activity_logs
+            .find({"user_id": user_id})
+            .sort("timestamp", -1)
+            .limit(10)
+        )
+        
+        for log in recent_logs:
+            log["_id"] = str(log["_id"])
+        
+        return {
+            "action_counts": action_counts,
+            "recent_activities": recent_logs,
+            "total_actions": sum(action_counts.values())
+        }
 
 def get_storage():
     return MongoDBStorage()

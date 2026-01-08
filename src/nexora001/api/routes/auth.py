@@ -1,5 +1,5 @@
-from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import timedelta, datetime
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 
@@ -50,6 +50,7 @@ async def register(
 
 @router.post("/login")
 async def login_for_access_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     storage: MongoDBStorage = Depends(get_storage)
 ):
@@ -72,6 +73,23 @@ async def login_for_access_token(
     # 3. Check Status
     if user.get("status") == "banned":
         raise HTTPException(status_code=400, detail="Account is banned")
+    
+    # 3.5. Update last login timestamp and login count
+    storage.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {"last_login": datetime.utcnow()},
+            "$inc": {"login_count": 1}
+        }
+    )
+    
+    # 3.6. Log activity
+    storage.log_activity(
+        user_id=str(user["_id"]),
+        action_type="login",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent")
+    )
 
     # 4. Generate Token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

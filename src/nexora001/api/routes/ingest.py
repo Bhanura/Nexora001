@@ -212,7 +212,8 @@ async def get_user_jobs(
 )
 async def ingest_file(
     file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)  # <--- Security Guard
+    current_user: dict = Depends(get_current_user),  # <--- Security Guard
+    storage: MongoDBStorage = Depends(get_storage)
 ):
     """
     Upload and process a document file.
@@ -267,6 +268,20 @@ async def ingest_file(
                         "message": result.get('error', 'Failed to process file')
                     }
                 )
+            
+            # Log document upload activity
+            storage.log_activity(
+                user_id=str(client_id),
+                action_type="upload",
+                resource_type="document",
+                resource_id=result.get('doc_id'),
+                details={
+                    "filename": file.filename,
+                    "file_type": file_ext,
+                    "chunks_created": result['chunks_created'],
+                    "total_characters": result['total_characters']
+                }
+            )
             
             return IngestResponse(
                 success=True,

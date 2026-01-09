@@ -208,15 +208,22 @@ async def get_user_details(
     # Get API keys
     api_keys = list(storage.api_keys.find(
         {"client_id": user_id},
-        {"key_prefix": 1, "created_at": 1, "last_used": 1}
+        {"key_prefix": 1, "name": 1, "status": 1, "created_at": 1, "last_used": 1, "revoked_at": 1, "revoked_by": 1}
     ))
     
     for key in api_keys:
         key["_id"] = str(key["_id"])
+        # Handle legacy keys
+        if "name" not in key:
+            key["name"] = "Legacy API Key"
+        if "status" not in key:
+            key["status"] = "active"
         if "created_at" in key:
             key["created_at"] = key["created_at"].isoformat() if hasattr(key["created_at"], "isoformat") else str(key["created_at"])
         if "last_used" in key:
             key["last_used"] = key["last_used"].isoformat() if hasattr(key["last_used"], "isoformat") else str(key["last_used"])
+        if "revoked_at" in key and key["revoked_at"]:
+            key["revoked_at"] = key["revoked_at"].isoformat() if hasattr(key["revoked_at"], "isoformat") else str(key["revoked_at"])
     
     # Get chat sessions (recent 20)
     chat_sessions = list(storage.chat_sessions.find(
@@ -287,21 +294,25 @@ async def delete_user_document(
         return {"message": "Document deleted successfully"}
     raise HTTPException(status_code=404, detail="Document not found")
 
-@router.post("/user/{user_id}/api-key/revoke")
+@router.post("/user/{user_id}/api-key/{key_id}/revoke")
 async def revoke_user_api_key(
     user_id: str,
     key_id: str,
     storage: MongoDBStorage = Depends(get_storage),
     admin: dict = Depends(get_current_active_superuser)
 ):
-    """Super Admin: Revoke user's API key."""
+    """Super Admin: Revoke user's API key (makes it unusable but keeps in DB)."""
     from bson import ObjectId
     
-    # Get key info before deletion
+    # Get key info before revocation
     key = storage.api_keys.find_one({"_id": ObjectId(key_id), "client_id": user_id})
+    if not key:
+        raise HTTPException(status_code=404, detail="API key not found")
     
-    result = storage.api_keys.delete_one({"_id": ObjectId(key_id), "client_id": user_id})
-    if result.deleted_count > 0:
+    # Revoke the key (changes status, sends notification)
+    success = storage.revoke_api_key(key_id, str(admin["_id"]))
+    
+    if success:
         # Log admin action
         storage.log_activity(
             user_id=str(admin["_id"]),
@@ -310,12 +321,14 @@ async def revoke_user_api_key(
             resource_id=key_id,
             details={
                 "target_user_id": user_id,
-                "key_prefix": key.get("key_prefix") if key else None,
+                "key_name": key.get("name"),
+                "key_prefix": key.get("key_prefix"),
                 "admin_email": admin["email"]
             }
         )
-        return {"message": "API key revoked successfully"}
-    raise HTTPException(status_code=404, detail="API key not found")
+        return {"message": "API key revoked successfully. User has been notified."}
+    
+    raise HTTPException(status_code=500, detail="Failed to revoke API key")
 
 # --- Activity Log Endpoints ---
 

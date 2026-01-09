@@ -147,25 +147,146 @@ class MongoDBStorage:
     # ==========================================
 
     def get_or_create_api_key(self, client_id: str) -> str:
-        """Return existing key if found, otherwise create new one."""
-        existing = self.api_keys.find_one({"client_id": client_id})
+        """Return existing active key if found, otherwise create new one. Legacy method for backward compatibility."""
+        existing = self.api_keys.find_one({"client_id": client_id, "status": "active"})
         if existing:
             return existing["key"]
             
+        # Create new key with default name
+        return self.create_api_key(client_id, "Default API Key")
+    
+    def create_api_key(self, client_id: str, name: str) -> str:
+        """Create a new API key with a name."""
         key = f"nx_{secrets.token_urlsafe(24)}"
+        key_prefix = key[:10] + "..."
+        
         self.api_keys.insert_one({
             "key": key,
+            "key_prefix": key_prefix,
             "client_id": client_id,
-            "created_at": datetime.utcnow()
+            "name": name,
+            "status": "active",
+            "created_at": datetime.utcnow(),
+            "last_used": None,
+            "revoked_at": None,
+            "revoked_by": None
         })
         return key
+    
+    def list_user_api_keys(self, client_id: str) -> List[Dict]:
+        """Get all API keys for a user."""
+        keys = list(self.api_keys.find(
+            {"client_id": client_id}
+        ).sort("created_at", -1))
+        
+        for key in keys:
+            key["_id"] = str(key["_id"])
+            # Handle legacy keys without new schema fields
+            if "name" not in key:
+                key["name"] = "Legacy API Key"
+            if "key_prefix" not in key and "key" in key:
+                key["key_prefix"] = key["key"][:10] + "..."
+            if "status" not in key:
+                key["status"] = "active"
+            # Format dates
+            if key.get("created_at"):
+                key["created_at"] = key["created_at"].isoformat() if hasattr(key["created_at"], "isoformat") else str(key["created_at"])
+            if key.get("last_used"):
+                key["last_used"] = key["last_used"].isoformat() if hasattr(key["last_used"], "isoformat") else str(key["last_used"])
+            if key.get("revoked_at"):
+                key["revoked_at"] = key["revoked_at"].isoformat() if hasattr(key["revoked_at"], "isoformat") else str(key["revoked_at"])
+            # Remove the actual key from response for security
+            key.pop("key", None)
+        
+        return keys
+    
+    def get_api_key_details(self, key_id: str, client_id: str) -> Optional[Dict]:
+        """Get full details of a specific API key including the actual key value."""
+        key_doc = self.api_keys.find_one({"_id": ObjectId(key_id), "client_id": client_id})
+        if key_doc:
+            key_doc["_id"] = str(key_doc["_id"])
+            return key_doc
+        return None
+    
+    def delete_api_key(self, key_id: str, client_id: str) -> bool:
+        """Permanently delete an API key (client admin action)."""
+        result = self.api_keys.delete_one({"_id": ObjectId(key_id), "client_id": client_id})
+        return result.deleted_count > 0
+    
+    def revoke_api_key(self, key_id: str, admin_id: str, notification_msg: str = None) -> bool:
+        """Revoke an API key (super admin action). Keeps in DB but makes unusable."""
+        result = self.api_keys.update_one(
+            {"_id": ObjectId(key_id)},
+            {
+                "$set": {
+                    "status": "revoked",
+                    "revoked_at": datetime.utcnow(),
+                    "revoked_by": admin_id
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            # Get the key to find client_id and send notification
+            key_doc = self.api_keys.find_one({"_id": ObjectId(key_id)})
+            if key_doc:
+                msg = notification_msg or "Your API key was revoked. Please contact admins for more information."
+                self.create_notification(key_doc["client_id"], msg, "warning")
+        
+        return result.modified_count > 0
+    
+    def regenerate_api_key(self, key_id: str, client_id: str) -> Optional[str]:
+        """Regenerate an API key (keeps same name and metadata)."""
+        old_key = self.api_keys.find_one({"_id": ObjectId(key_id), "client_id": client_id})
+        if not old_key:
+            return None
+        
+        new_key = f"nx_{secrets.token_urlsafe(24)}"
+        new_key_prefix = new_key[:10] + "..."
+        
+        self.api_keys.update_one(
+            {"_id": ObjectId(key_id)},
+            {
+                "$set": {
+                    "key": new_key,
+                    "key_prefix": new_key_prefix,
+                    "status": "active",
+                    "created_at": datetime.utcnow(),
+                    "last_used": None,
+                    "revoked_at": None,
+                    "revoked_by": None
+                }
+            }
+        )
+        return new_key
+    
+    def update_api_key_name(self, key_id: str, client_id: str, new_name: str) -> bool:
+        """Update the name of an API key."""
+        result = self.api_keys.update_one(
+            {"_id": ObjectId(key_id), "client_id": client_id},
+            {"$set": {"name": new_name}}
+        )
+        return result.modified_count > 0
 
     def validate_api_key(self, key: str) -> Optional[str]:
+        """Validate API key and return client_id if valid and active."""
         doc = self.api_keys.find_one({"key": key})
         if doc:
+            # Check if key is active
+            if doc.get("status") != "active":
+                return None
+            
+            # Check if user is banned
             user = self.users.find_one({"_id": ObjectId(doc['client_id'])})
             if user and user.get('status') == 'banned':
                 return None
+            
+            # Update last_used timestamp
+            self.api_keys.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"last_used": datetime.utcnow()}}
+            )
+            
             return doc['client_id']
         return None
 

@@ -44,7 +44,7 @@ class AnswerGenerator:
             }
         )
         
-        self.system_prompt = """You are Nexora001, an intelligent AI assistant that helps users understand technical documentation. 
+        self.system_prompt = """You are Nexora001, an intelligent AI assistant that helps users. 
 
 Your responsibilities:
 1. Answer questions based on the provided context documents
